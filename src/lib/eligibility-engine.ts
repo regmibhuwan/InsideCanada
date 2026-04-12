@@ -1,5 +1,44 @@
 import type { UserCase, EligibilityResult } from "./types";
 import { differenceInDays, parseISO } from "date-fns";
+import { CLB_IELTS_MAPPING } from "./constants";
+
+function ieltsScoreToCLB(score: number): number {
+  const clbLevels = Object.keys(CLB_IELTS_MAPPING)
+    .map(Number)
+    .sort((a, b) => b - a);
+  for (const clb of clbLevels) {
+    if (score >= CLB_IELTS_MAPPING[clb].listening) return clb;
+  }
+  return 0;
+}
+
+function deriveClbFromScores(test: {
+  test_type: string;
+  listening_score?: number | null;
+  reading_score?: number | null;
+  writing_score?: number | null;
+  speaking_score?: number | null;
+}): number[] {
+  if (!test.listening_score || !test.reading_score || !test.writing_score || !test.speaking_score) return [];
+  const isIelts = test.test_type?.includes("ielts") || test.test_type?.includes("general") || test.test_type?.includes("academic");
+  if (!isIelts) return [];
+
+  const clbLevels = Object.keys(CLB_IELTS_MAPPING).map(Number).sort((a, b) => b - a);
+
+  function scoreToClb(score: number, skill: "listening" | "reading" | "writing" | "speaking"): number {
+    for (const clb of clbLevels) {
+      if (score >= CLB_IELTS_MAPPING[clb][skill]) return clb;
+    }
+    return 0;
+  }
+
+  return [
+    scoreToClb(test.listening_score, "listening"),
+    scoreToClb(test.reading_score, "reading"),
+    scoreToClb(test.writing_score, "writing"),
+    scoreToClb(test.speaking_score, "speaking"),
+  ];
+}
 
 function getMinCLB(userCase: UserCase): number {
   if (!userCase.languageTests.length) return 0;
@@ -7,8 +46,15 @@ function getMinCLB(userCase: UserCase): number {
     .filter(t => differenceInDays(parseISO(t.expiry_date), new Date()) > 0)
     .sort((a, b) => new Date(b.test_date).getTime() - new Date(a.test_date).getTime())[0];
   if (!latest) return 0;
+
   const clbs = [latest.clb_listening, latest.clb_reading, latest.clb_writing, latest.clb_speaking].filter(Boolean) as number[];
-  return clbs.length ? Math.min(...clbs) : 0;
+  if (clbs.length >= 4) return Math.min(...clbs);
+
+  const derived = deriveClbFromScores(latest);
+  if (derived.length === 4) return Math.min(...derived);
+
+  if (clbs.length > 0) return Math.min(...clbs);
+  return 0;
 }
 
 function getCanadianExperienceMonths(userCase: UserCase): number {

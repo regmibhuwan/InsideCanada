@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useCase } from "@/lib/use-case";
-import { createClient } from "@/lib/supabase/client";
 import { formatDate, prStageLabel, prProgramLabel } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -49,6 +48,7 @@ export default function PRTrackerPage() {
   const { userCase, loading } = useCase();
   const [drawData, setDrawData] = useState<DrawData | null>(null);
   const [loadingDraws, setLoadingDraws] = useState(false);
+  const [drawError, setDrawError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
 
   const hasApplied = userCase.profile?.has_applied_pr;
@@ -63,7 +63,11 @@ export default function PRTrackerPage() {
 
   async function fetchDrawData() {
     setLoadingDraws(true);
+    setDrawError(null);
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+
       const res = await fetch("/api/ai/pr-tracker", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -74,12 +78,25 @@ export default function PRTrackerPage() {
           crs_score: latestApp?.ita_crs_score || null,
           has_applied: hasApplied,
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
+
       if (res.ok) {
         const data = await res.json();
         setDrawData(data);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setDrawError(errData.error === "AI not configured"
+          ? "AI is not configured yet. Add your OPENAI_API_KEY in environment variables and redeploy."
+          : "Failed to load data. Please try again.");
       }
-    } catch (e) {
+    } catch (e: any) {
+      if (e?.name === "AbortError") {
+        setDrawError("Request timed out. The AI service may be slow — try again.");
+      } else {
+        setDrawError("Could not connect to the AI service. Please try again later.");
+      }
       console.error("Failed to fetch draw data:", e);
     }
     setLoadingDraws(false);
@@ -124,16 +141,16 @@ export default function PRTrackerPage() {
         </TabsList>
 
         <TabsContent value="overview">
-          <DrawsTab drawData={drawData} loading={loadingDraws} userCrs={latestApp?.ita_crs_score} />
+          <DrawsTab drawData={drawData} loading={loadingDraws} error={drawError} userCrs={latestApp?.ita_crs_score} onRetry={fetchDrawData} />
         </TabsContent>
         <TabsContent value="processing">
-          <ProcessingTimesTab drawData={drawData} loading={loadingDraws} app={latestApp} />
+          <ProcessingTimesTab drawData={drawData} loading={loadingDraws} error={drawError} app={latestApp} onRetry={fetchDrawData} />
         </TabsContent>
         <TabsContent value="noc">
-          <NOCInsightsTab drawData={drawData} loading={loadingDraws} />
+          <NOCInsightsTab drawData={drawData} loading={loadingDraws} error={drawError} onRetry={fetchDrawData} />
         </TabsContent>
         <TabsContent value="alternatives">
-          <AlternativesTab drawData={drawData} loading={loadingDraws} />
+          <AlternativesTab drawData={drawData} loading={loadingDraws} error={drawError} onRetry={fetchDrawData} />
         </TabsContent>
         <TabsContent value="tips">
           <StrategyTab drawData={drawData} loading={loadingDraws} hasApplied={hasApplied} />
@@ -234,8 +251,21 @@ function LoadingState() {
   );
 }
 
-function DrawsTab({ drawData, loading, userCrs }: { drawData: DrawData | null; loading: boolean; userCrs?: number }) {
+function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <AlertTriangle className="h-8 w-8 text-amber-500 mb-3" />
+      <p className="text-sm text-muted-foreground mb-4">{error}</p>
+      <Button variant="outline" size="sm" onClick={onRetry}>
+        <RefreshCw className="h-4 w-4 mr-1" /> Try Again
+      </Button>
+    </div>
+  );
+}
+
+function DrawsTab({ drawData, loading, error, userCrs, onRetry }: { drawData: DrawData | null; loading: boolean; error: string | null; userCrs?: number; onRetry: () => void }) {
   if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={onRetry} />;
 
   return (
     <Card>
@@ -284,8 +314,9 @@ function DrawsTab({ drawData, loading, userCrs }: { drawData: DrawData | null; l
   );
 }
 
-function ProcessingTimesTab({ drawData, loading, app }: { drawData: DrawData | null; loading: boolean; app?: any }) {
+function ProcessingTimesTab({ drawData, loading, error, app, onRetry }: { drawData: DrawData | null; loading: boolean; error: string | null; app?: any; onRetry: () => void }) {
   if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={onRetry} />;
 
   const daysSinceSubmission = app?.submission_date
     ? Math.floor((Date.now() - new Date(app.submission_date).getTime()) / (1000 * 60 * 60 * 24))
@@ -342,8 +373,9 @@ function ProcessingTimesTab({ drawData, loading, app }: { drawData: DrawData | n
   );
 }
 
-function NOCInsightsTab({ drawData, loading }: { drawData: DrawData | null; loading: boolean }) {
+function NOCInsightsTab({ drawData, loading, error, onRetry }: { drawData: DrawData | null; loading: boolean; error: string | null; onRetry: () => void }) {
   if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={onRetry} />;
 
   return (
     <Card>
@@ -383,8 +415,9 @@ function NOCInsightsTab({ drawData, loading }: { drawData: DrawData | null; load
   );
 }
 
-function AlternativesTab({ drawData, loading }: { drawData: DrawData | null; loading: boolean }) {
+function AlternativesTab({ drawData, loading, error, onRetry }: { drawData: DrawData | null; loading: boolean; error: string | null; onRetry: () => void }) {
   if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={onRetry} />;
 
   return (
     <Card>
