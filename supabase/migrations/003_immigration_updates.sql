@@ -12,8 +12,8 @@ create table public.immigration_updates (
   detected_at timestamptz not null default now(),
   category text not null check (category in (
     'express_entry_draw', 'processing_time', 'policy_change', 'pgwp_update',
-    'pnp_update', 'eligibility_change', 'rule_change', 'levels_plan',
-    'category_based_draw', 'general_news', 'transition_rule'
+    'pnp_update', 'aip_update', 'eligibility_change', 'rule_change', 'levels_plan',
+    'category_based_draw', 'general_news', 'transition_rule', 'provincial_draw'
   )),
   urgency text not null default 'normal' check (urgency in ('critical', 'high', 'normal', 'low')),
   affected_groups text[] not null default '{}',

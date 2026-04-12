@@ -94,9 +94,9 @@ Source category hint: ${sourceCategory}
 
 Return JSON:
 {
-  "category": one of: "express_entry_draw", "processing_time", "policy_change", "pgwp_update", "pnp_update", "eligibility_change", "rule_change", "levels_plan", "category_based_draw", "general_news", "transition_rule",
+  "category": one of: "express_entry_draw", "processing_time", "policy_change", "pgwp_update", "pnp_update", "aip_update", "eligibility_change", "rule_change", "levels_plan", "category_based_draw", "general_news", "transition_rule", "provincial_draw",
   "urgency": one of: "critical", "high", "normal", "low",
-  "affected_groups": array of: "pgwp_holder", "pgwp_applicant", "student_visa", "work_permit", "ee_candidate", "pr_applicant", "pnp_applicant", "maintained_status", "all",
+  "affected_groups": array of: "pgwp_holder", "pgwp_applicant", "student_visa", "work_permit", "ee_candidate", "pr_applicant", "pnp_applicant", "aip_applicant", "nsnp_applicant", "oinp_applicant", "bcpnp_applicant", "sinp_applicant", "mpnp_applicant", "maintained_status", "all",
   "summary": "2-3 sentence summary",
   "plain_language": "Simple explanation for someone unfamiliar with immigration terms, 2-3 sentences",
   "action_required": "What should affected users do? null if no action needed"
