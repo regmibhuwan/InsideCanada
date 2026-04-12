@@ -51,6 +51,8 @@ export default function PRTrackerPage() {
   const [aiData, setAiData] = useState<any>(null);
   const [loadingAI, setLoadingAI] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [liveContext, setLiveContext] = useState<any[]>([]);
+  const [loadingContext, setLoadingContext] = useState(false);
 
   const hasApplied = userCase.profile?.has_applied_pr;
   const prApps = userCase.prApplications || [];
@@ -71,14 +73,46 @@ export default function PRTrackerPage() {
       const res = await fetch("/api/immigration/user-impact");
       if (res.ok) {
         const data = await res.json();
-        setUpdates(data.updates || []);
+        const fetched = data.updates || [];
+        setUpdates(fetched);
+        if (fetched.length === 0) {
+          fetchLiveContext();
+        }
       } else {
         setFeedError("Could not load updates.");
+        fetchLiveContext();
       }
     } catch {
       setFeedError("Connection error.");
+      fetchLiveContext();
     }
     setLoadingFeed(false);
+  }
+
+  async function fetchLiveContext() {
+    setLoadingContext(true);
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 35000);
+      const res = await fetch("/api/ai/live-context", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          province: userProvince,
+          status: userCase.profile?.immigration_status || "",
+          stream: userProgram,
+          has_applied: hasApplied,
+          noc_code: latestApp?.noc_code_applied || userCase.workHistory?.[0]?.noc_code || "",
+        }),
+      });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const data = await res.json();
+        setLiveContext(data.cards || []);
+      }
+    } catch { /* silent */ }
+    setLoadingContext(false);
   }
 
   async function fetchAIAnalysis() {
@@ -169,19 +203,15 @@ export default function PRTrackerPage() {
               <LoadingState />
             ) : feedError ? (
               <ErrorState message={feedError} onRetry={fetchFeed} />
-            ) : !hasData ? (
-              <EmptyState />
-            ) : highRelevance.length === 0 ? (
-              <Card>
-                <CardContent className="py-12 text-center">
-                  <Info className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-50" />
-                  <h3 className="font-semibold mb-1">No high-relevance updates right now</h3>
-                  <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                    All ingested updates have low relevance to your profile. Check the &quot;All Updates&quot;
-                    tab, or click AI Analysis for a personalized summary.
-                  </p>
-                </CardContent>
-              </Card>
+            ) : !hasData && liveContext.length === 0 && !loadingContext ? (
+              <EmptyState onLoadContext={fetchLiveContext} />
+            ) : !hasData || highRelevance.length === 0 ? (
+              <LiveContextSection
+                liveContext={liveContext}
+                loadingContext={loadingContext}
+                updates={highRelevance}
+                onLoadContext={fetchLiveContext}
+              />
             ) : (
               highRelevance.map(update => (
                 <VerifiedUpdateCard key={update.id} update={update} />
@@ -207,8 +237,15 @@ export default function PRTrackerPage() {
               <LoadingState />
             ) : feedError ? (
               <ErrorState message={feedError} onRetry={fetchFeed} />
+            ) : !hasData && liveContext.length === 0 && !loadingContext ? (
+              <EmptyState onLoadContext={fetchLiveContext} />
             ) : !hasData ? (
-              <EmptyState />
+              <LiveContextSection
+                liveContext={liveContext}
+                loadingContext={loadingContext}
+                updates={[]}
+                onLoadContext={fetchLiveContext}
+              />
             ) : filteredUpdates.length === 0 ? (
               <Card>
                 <CardContent className="py-8 text-center text-sm text-muted-foreground">
@@ -635,22 +672,158 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
   );
 }
 
-function EmptyState() {
+function LiveContextSection({ liveContext, loadingContext, updates, onLoadContext }: {
+  liveContext: any[];
+  loadingContext: boolean;
+  updates: ScoredUpdate[];
+  onLoadContext: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      {/* Show any verified updates first */}
+      {updates.map(update => (
+        <VerifiedUpdateCard key={update.id} update={update} />
+      ))}
+
+      {/* Live context intro */}
+      {liveContext.length > 0 && (
+        <div className="flex items-start gap-3 p-4 rounded-xl border border-blue-200 bg-blue-50/50">
+          <Info className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-blue-900">
+              No new rule changes detected today — here&apos;s the latest official context for your path.
+            </p>
+            <p className="text-xs text-blue-700 mt-1">
+              These cards are generated from live official source pages. All facts come directly from the source.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {loadingContext && (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3" />
+            <p className="text-sm font-medium">Fetching live context from official sources...</p>
+            <p className="text-xs mt-1">Checking IRCC, provincial, and eligibility pages</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Live context cards */}
+      {liveContext.map((card, i) => (
+        <LiveContextCard key={i} card={card} />
+      ))}
+
+      {!loadingContext && liveContext.length === 0 && updates.length === 0 && (
+        <Card>
+          <CardContent className="py-10 text-center">
+            <Newspaper className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-50" />
+            <h3 className="font-semibold mb-2">Loading live context...</h3>
+            <p className="text-sm text-muted-foreground max-w-md mx-auto mb-4">
+              We&apos;ll fetch the latest from official IRCC and provincial pages for you.
+            </p>
+            <Button onClick={onLoadContext} size="sm">
+              <Zap className="h-4 w-4 mr-1" /> Load Live Context
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function LiveContextCard({ card }: { card: any }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const categoryColors: Record<string, string> = {
+    program_info: "bg-blue-100 text-blue-800",
+    eligibility: "bg-green-100 text-green-800",
+    processing: "bg-purple-100 text-purple-800",
+    requirement: "bg-orange-100 text-orange-800",
+    news: "bg-gray-100 text-gray-800",
+  };
+
+  return (
+    <Card className={`cursor-pointer hover:border-primary/20 transition-colors ${
+      card.relevanceToUser === "high" ? "border-primary/20 bg-primary/5" : ""
+    }`} onClick={() => setExpanded(!expanded)}>
+      <CardContent className="p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex flex-col items-center gap-1 shrink-0">
+            <div className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-500 text-white">
+              LIVE
+            </div>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="font-semibold text-sm">{card.title}</h3>
+              {expanded ? <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />}
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap mt-1.5 mb-2">
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${categoryColors[card.category] || "bg-gray-100 text-gray-800"}`}>
+                {card.category?.replace("_", " ") || "context"}
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-800 flex items-center gap-0.5">
+                <Shield className="h-2.5 w-2.5" /> Official Source
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted">Just fetched</span>
+            </div>
+            <p className="text-sm text-muted-foreground">{card.summary}</p>
+
+            {/* Why this matters */}
+            {card.whyThisMatters && (
+              <p className="text-xs text-primary mt-2 font-medium flex items-center gap-1">
+                <Target className="h-3 w-3 shrink-0" />
+                {card.whyThisMatters}
+              </p>
+            )}
+
+            {/* Next action */}
+            {card.nextAction && (
+              <div className="mt-2 p-2 bg-amber-50 rounded border border-amber-200">
+                <p className="text-xs font-medium text-amber-900 flex items-center gap-1">
+                  <Lightbulb className="h-3 w-3 shrink-0" />
+                  Next step: {card.nextAction}
+                </p>
+              </div>
+            )}
+
+            {/* Source link */}
+            {card.sourceUrl && (
+              <a href={card.sourceUrl} target="_blank" rel="noopener noreferrer"
+                className="text-xs text-blue-600 hover:underline flex items-center gap-1 mt-2"
+                onClick={e => e.stopPropagation()}>
+                <ExternalLink className="h-3 w-3" /> {card.sourceName || "View official source"}
+              </a>
+            )}
+
+            {expanded && (
+              <div className="mt-3 pt-3 border-t text-[11px] text-muted-foreground">
+                <p>Source: {card.sourceName} — {card.sourceUrl}</p>
+                <p>Type: Live context (fetched on-demand from official page)</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function EmptyState({ onLoadContext }: { onLoadContext: () => void }) {
   return (
     <Card>
       <CardContent className="flex flex-col items-center py-12">
         <Newspaper className="h-10 w-10 text-muted-foreground mb-3 opacity-50" />
-        <h3 className="font-semibold mb-1">No verified updates yet</h3>
+        <h3 className="font-semibold mb-2">Let&apos;s get your live context</h3>
         <p className="text-sm text-muted-foreground text-center max-w-md mb-4">
-          The data pipeline monitors official IRCC and provincial sources daily. Updates will appear
-          here once changes are detected. In the meantime, check the &quot;Official Sources&quot; tab for direct links.
+          No new rule changes detected yet. We can fetch the latest from official IRCC and
+          provincial pages to show you what&apos;s current for your path.
         </p>
-        <a href="https://www.canada.ca/en/immigration-refugees-citizenship/news/notices.html"
-          target="_blank" rel="noopener noreferrer">
-          <Button variant="outline" size="sm">
-            <ExternalLink className="h-4 w-4 mr-1" /> Check IRCC Directly
-          </Button>
-        </a>
+        <Button onClick={onLoadContext} size="sm">
+          <Zap className="h-4 w-4 mr-1" /> Load Live Context
+        </Button>
       </CardContent>
     </Card>
   );
