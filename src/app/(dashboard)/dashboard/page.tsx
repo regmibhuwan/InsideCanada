@@ -7,11 +7,10 @@ import { daysUntil, formatDate, urgencyColor, severityColor, statusLabel, permit
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import {
   Shield, Clock, AlertTriangle, ArrowRight, FileCheck, Brain,
-  CheckCircle2, XCircle, CalendarClock, Briefcase, GraduationCap,
-  MapPin, Loader2, ChevronRight, TrendingUp, BarChart3
+  CheckCircle2, XCircle, Briefcase, GraduationCap,
+  MapPin, Loader2, ChevronRight, TrendingUp, BarChart3, CalendarClock
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
@@ -58,8 +57,6 @@ export default function DashboardPage() {
   const permitDays = activePermit ? daysUntil(activePermit.expiry_date) : null;
   const passport = userCase.passports[0];
   const passportDays = passport ? daysUntil(passport.expiry_date) : null;
-  const completedMilestones = userCase.milestones.filter(m => m.is_completed).length;
-  const totalMilestones = Math.max(userCase.milestones.length, 1);
   const criticalAlerts = riskAlerts.filter(a => a.severity === "critical");
   const highAlerts = riskAlerts.filter(a => a.severity === "high");
 
@@ -411,40 +408,19 @@ export default function DashboardPage() {
 
         {/* Right Column */}
         <div className="space-y-6">
-          {/* PR Journey Progress */}
+          {/* Document Readiness */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">PR Journey Progress</CardTitle>
+              <CardTitle className="text-base">Document Readiness</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                <Progress value={(completedMilestones / totalMilestones) * 100} />
                 <p className="text-sm text-muted-foreground">
-                  {completedMilestones} of {totalMilestones} milestones completed
+                  Track which documents you have ready for your application.
                 </p>
-                {userCase.milestones.length > 0 ? (
-                  <div className="space-y-2 mt-4">
-                    {userCase.milestones.slice(0, 5).map((m) => (
-                      <div key={m.id} className="flex items-center gap-2 text-sm">
-                        {m.is_completed ? (
-                          <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
-                        ) : (
-                          <div className="h-4 w-4 rounded-full border-2 border-gray-300 shrink-0" />
-                        )}
-                        <span className={m.is_completed ? "line-through text-muted-foreground" : ""}>
-                          {m.title}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Visit your timeline to set up milestones
-                  </p>
-                )}
-                <Link href="/timeline">
+                <Link href="/documents">
                   <Button variant="outline" size="sm" className="w-full mt-3">
-                    View Timeline
+                    Check Documents
                   </Button>
                 </Link>
               </div>

@@ -125,6 +125,10 @@ export interface Profile {
   onboarding_completed: boolean;
   has_applied_pr: boolean;
   pr_application_program?: string;
+  target_pr_stream?: string;
+  crs_score?: number;
+  onboarding_step?: number;
+  notification_preferences?: Record<string, boolean>;
   created_at: string;
   updated_at: string;
 }

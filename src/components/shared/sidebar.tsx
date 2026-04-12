@@ -5,17 +5,16 @@ import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard, User, CalendarClock, FolderOpen,
-  CheckSquare, Brain, Users, LogOut, MapPin, Menu, X, BarChart3
+  LayoutDashboard, User, FolderOpen, BarChart3,
+  CheckSquare, Brain, Users, LogOut, MapPin, Menu, X, Bell
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/profile", label: "My Profile", icon: User },
   { href: "/pr-tracker", label: "PR Tracker", icon: BarChart3 },
-  { href: "/timeline", label: "Timeline", icon: CalendarClock },
   { href: "/documents", label: "Documents", icon: FolderOpen },
   { href: "/eligibility", label: "Eligibility", icon: CheckSquare },
   { href: "/advisor", label: "AI Advisor", icon: Brain },
@@ -26,6 +25,24 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    fetchNotificationCount();
+    const interval = setInterval(fetchNotificationCount, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  async function fetchNotificationCount() {
+    try {
+      const res = await fetch("/api/immigration/notifications");
+      if (res.ok) {
+        const data = await res.json();
+        const unread = (data.notifications || []).filter((n: any) => !n.is_read).length;
+        setUnreadCount(unread);
+      }
+    } catch { /* silent */ }
+  }
 
   async function handleLogout() {
     const supabase = createClient();
@@ -61,12 +78,30 @@ export function Sidebar() {
             >
               <item.icon className="h-5 w-5" />
               {item.label}
+              {item.href === "/pr-tracker" && unreadCount > 0 && (
+                <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
             </Link>
           );
         })}
       </nav>
 
-      <div className="p-3 border-t">
+      <div className="p-3 border-t space-y-1">
+        <Link
+          href="/pr-tracker"
+          onClick={() => setMobileOpen(false)}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors relative"
+        >
+          <Bell className="h-5 w-5" />
+          Notifications
+          {unreadCount > 0 && (
+            <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+              {unreadCount}
+            </span>
+          )}
+        </Link>
         <button
           onClick={handleLogout}
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors w-full"
@@ -89,6 +124,14 @@ export function Sidebar() {
           <MapPin className="h-5 w-5 text-primary" />
           <span className="font-bold">InsideCanada</span>
         </div>
+        {unreadCount > 0 && (
+          <Link href="/pr-tracker" className="ml-auto relative">
+            <Bell className="h-5 w-5 text-gray-600" />
+            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          </Link>
+        )}
       </div>
 
       {/* Mobile overlay */}
