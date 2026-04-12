@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, User, CalendarClock, FolderOpen,
-  CheckSquare, Brain, Users, LogOut, MapPin, Menu, X
+  CheckSquare, Brain, Users, LogOut, MapPin, Menu, X, BarChart3
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/profile", label: "My Profile", icon: User },
+  { href: "/pr-tracker", label: "PR Tracker", icon: BarChart3 },
   { href: "/timeline", label: "Timeline", icon: CalendarClock },
   { href: "/documents", label: "Documents", icon: FolderOpen },
   { href: "/eligibility", label: "Eligibility", icon: CheckSquare },

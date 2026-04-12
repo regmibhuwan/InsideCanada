@@ -3,7 +3,7 @@
 import { useCase } from "@/lib/use-case";
 import { runRiskAnalysis } from "@/lib/risk-engine";
 import { runEligibilityCheck } from "@/lib/eligibility-engine";
-import { daysUntil, formatDate, urgencyColor, severityColor, statusLabel, permitLabel, calculateCanadianExperienceMonths } from "@/lib/utils";
+import { daysUntil, formatDate, urgencyColor, severityColor, statusLabel, permitLabel, calculateCanadianExperienceMonths, prStageLabel, prProgramLabel } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import {
   Shield, Clock, AlertTriangle, ArrowRight, FileCheck, Brain,
   CheckCircle2, XCircle, CalendarClock, Briefcase, GraduationCap,
-  MapPin, Loader2, ChevronRight, TrendingUp
+  MapPin, Loader2, ChevronRight, TrendingUp, BarChart3
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
@@ -52,6 +52,8 @@ export default function DashboardPage() {
     );
   }
 
+  const hasApplied = userCase.profile.has_applied_pr;
+  const latestApp = userCase.prApplications?.[0];
   const activePermit = userCase.permits.find(p => p.status === "active");
   const permitDays = activePermit ? daysUntil(activePermit.expiry_date) : null;
   const passport = userCase.passports[0];
@@ -67,10 +69,11 @@ export default function DashboardPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
-            Welcome, {userCase.profile.full_name.split(" ")[0]}
+            Welcome, {userCase.profile.full_name?.split(" ")[0] || "there"}
           </h1>
           <div className="flex items-center gap-2 mt-1">
             <Badge variant="secondary">{statusLabel(userCase.profile.immigration_status)}</Badge>
+            {hasApplied && <Badge variant="default">PR Applied</Badge>}
             {userCase.profile.current_province && (
               <span className="text-sm text-muted-foreground flex items-center gap-1">
                 <MapPin className="h-3.5 w-3.5" /> {userCase.profile.current_province}
@@ -78,13 +81,28 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
-        <Link href="/advisor">
-          <Button>
-            <Brain className="h-4 w-4" />
-            Ask AI Advisor
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          {hasApplied && (
+            <Link href="/pr-tracker">
+              <Button variant="outline">
+                <BarChart3 className="h-4 w-4" />
+                PR Tracker
+              </Button>
+            </Link>
+          )}
+          <Link href="/advisor">
+            <Button>
+              <Brain className="h-4 w-4" />
+              Ask AI Advisor
+            </Button>
+          </Link>
+        </div>
       </div>
+
+      {/* PR Application Progress Banner (for applicants) */}
+      {hasApplied && latestApp && (
+        <PRApplicationBanner app={latestApp} />
+      )}
 
       {/* Critical Alerts */}
       {criticalAlerts.length > 0 && (
@@ -108,30 +126,51 @@ export default function DashboardPage() {
 
       {/* Key Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Work Permit</p>
-                {activePermit ? (
-                  <>
-                    <p className="text-2xl font-bold mt-1">
-                      {permitDays !== null && permitDays >= 0 ? `${permitDays}d` : "Expired"}
-                    </p>
+        {hasApplied && latestApp ? (
+          <Card>
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">PR Application</p>
+                  <p className="text-lg font-bold mt-1">{prStageLabel(latestApp.current_stage)}</p>
+                  {latestApp.submission_date && (
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {permitDays !== null && permitDays >= 0 ? `Expires ${formatDate(activePermit.expiry_date)}` : "Take action now"}
+                      {Math.floor((Date.now() - new Date(latestApp.submission_date).getTime()) / (1000 * 60 * 60 * 24))} days waiting
                     </p>
-                  </>
-                ) : (
-                  <p className="text-lg font-medium mt-1 text-muted-foreground">Not set</p>
-                )}
+                  )}
+                </div>
+                <div className="h-12 w-12 rounded-xl bg-blue-50 flex items-center justify-center">
+                  <FileCheck className="h-6 w-6 text-blue-600" />
+                </div>
               </div>
-              <div className={`h-12 w-12 rounded-xl flex items-center justify-center ${permitDays !== null ? urgencyColor(permitDays) : "bg-gray-100"}`}>
-                <Clock className="h-6 w-6" />
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Work Permit</p>
+                  {activePermit ? (
+                    <>
+                      <p className="text-2xl font-bold mt-1">
+                        {permitDays !== null && permitDays >= 0 ? `${permitDays}d` : "Expired"}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {permitDays !== null && permitDays >= 0 ? `Expires ${formatDate(activePermit.expiry_date)}` : "Take action now"}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-lg font-medium mt-1 text-muted-foreground">Not set</p>
+                  )}
+                </div>
+                <div className={`h-12 w-12 rounded-xl flex items-center justify-center ${permitDays !== null ? urgencyColor(permitDays) : "bg-gray-100"}`}>
+                  <Clock className="h-6 w-6" />
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardContent className="p-5">
@@ -184,7 +223,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Alerts + Next Actions */}
+        {/* Left Column */}
         <div className="lg:col-span-2 space-y-6">
           {/* Risk Alerts */}
           {highAlerts.length > 0 && (
@@ -213,46 +252,102 @@ export default function DashboardPage() {
             </Card>
           )}
 
-          {/* PR Pathway Overview */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-primary" />
-                PR Pathway Snapshot
-              </CardTitle>
-              <CardDescription>Your eligibility for major PR programs</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {eligibility.map((result) => (
-                <div key={result.program} className="flex items-center gap-3 p-3 rounded-lg border">
-                  {result.eligible ? (
-                    <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
-                  ) : (
-                    <XCircle className="h-5 w-5 text-gray-400 shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm">{result.program}</p>
-                    {result.eligible ? (
-                      <p className="text-xs text-green-600 mt-0.5">You appear eligible</p>
-                    ) : (
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {result.missingRequirements[0]}
-                      </p>
-                    )}
+          {/* PR Pathway Overview — different card for applicants */}
+          {hasApplied ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5 text-primary" />
+                  Application Overview
+                </CardTitle>
+                <CardDescription>Your PR application status and what to do while waiting</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-3 bg-muted rounded-lg">
+                    <p className="text-xs text-muted-foreground">Keep Valid</p>
+                    <ul className="mt-2 space-y-1 text-sm">
+                      <li className="flex items-center gap-2">
+                        {activePermit ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600" /> : <XCircle className="h-3.5 w-3.5 text-red-500" />}
+                        Work Permit
+                      </li>
+                      <li className="flex items-center gap-2">
+                        {passport ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600" /> : <XCircle className="h-3.5 w-3.5 text-red-500" />}
+                        Passport
+                      </li>
+                      <li className="flex items-center gap-2">
+                        {userCase.languageTests.length > 0 ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600" /> : <XCircle className="h-3.5 w-3.5 text-red-500" />}
+                        Language Tests
+                      </li>
+                    </ul>
                   </div>
-                  <Badge variant={result.eligible ? "success" : "secondary"}>
-                    {result.confidence}
-                  </Badge>
+                  <div className="p-3 bg-muted rounded-lg">
+                    <p className="text-xs text-muted-foreground">Application Milestones</p>
+                    <ul className="mt-2 space-y-1 text-sm">
+                      <li className="flex items-center gap-2">
+                        {latestApp?.biometrics_done ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600" /> : <Clock className="h-3.5 w-3.5 text-muted-foreground" />}
+                        Biometrics
+                      </li>
+                      <li className="flex items-center gap-2">
+                        {latestApp?.medical_passed ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600" /> : <Clock className="h-3.5 w-3.5 text-muted-foreground" />}
+                        Medical Exam
+                      </li>
+                      <li className="flex items-center gap-2">
+                        {latestApp?.background_check_started ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600" /> : <Clock className="h-3.5 w-3.5 text-muted-foreground" />}
+                        Background Check
+                      </li>
+                    </ul>
+                  </div>
                 </div>
-              ))}
-              <Link href="/eligibility">
-                <Button variant="outline" className="w-full mt-2">
-                  Full Eligibility Check
-                  <ArrowRight className="h-4 w-4 ml-1" />
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
+                <Link href="/pr-tracker">
+                  <Button variant="outline" className="w-full mt-2">
+                    View PR Tracker — Draws, Processing Times & More
+                    <ArrowRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-primary" />
+                  PR Pathway Snapshot
+                </CardTitle>
+                <CardDescription>Your eligibility for major PR programs</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {eligibility.map((result) => (
+                  <div key={result.program} className="flex items-center gap-3 p-3 rounded-lg border">
+                    {result.eligible ? (
+                      <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-gray-400 shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm">{result.program}</p>
+                      {result.eligible ? (
+                        <p className="text-xs text-green-600 mt-0.5">You appear eligible</p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {result.missingRequirements[0]}
+                        </p>
+                      )}
+                    </div>
+                    <Badge variant={result.eligible ? "success" : "secondary"}>
+                      {result.confidence}
+                    </Badge>
+                  </div>
+                ))}
+                <Link href="/eligibility">
+                  <Button variant="outline" className="w-full mt-2">
+                    Full Eligibility Check
+                    <ArrowRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Quick Stats */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -314,7 +409,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Right Column: Progress + Quick Links */}
+        {/* Right Column */}
         <div className="space-y-6">
           {/* PR Journey Progress */}
           <Card>
@@ -389,6 +484,14 @@ export default function DashboardPage() {
                   </span>
                 </div>
               )}
+              {hasApplied && latestApp?.submission_date && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">PR Submitted</span>
+                  <span className="font-medium text-primary">
+                    {formatDate(latestApp.submission_date)}
+                  </span>
+                </div>
+              )}
               {!activePermit && !passport && userCase.languageTests.length === 0 && (
                 <p className="text-sm text-muted-foreground">
                   Add your permits and documents to see key dates
@@ -403,6 +506,13 @@ export default function DashboardPage() {
               <CardTitle className="text-base">Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
+              {hasApplied && (
+                <Link href="/pr-tracker" className="block">
+                  <Button variant="outline" size="sm" className="w-full justify-start">
+                    <BarChart3 className="h-4 w-4 mr-2" /> Check Latest Draws
+                  </Button>
+                </Link>
+              )}
               <Link href="/profile" className="block">
                 <Button variant="outline" size="sm" className="w-full justify-start">
                   <Briefcase className="h-4 w-4 mr-2" /> Add Work Experience
@@ -428,5 +538,44 @@ export default function DashboardPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function PRApplicationBanner({ app }: { app: any }) {
+  const stages = [
+    "profile_created", "ita_received", "submitted", "aor_received",
+    "biometrics_requested", "medical_requested", "background_check",
+    "additional_docs", "decision_made", "approved"
+  ];
+  const currentIdx = stages.indexOf(app.current_stage);
+  const progress = currentIdx >= 0 ? Math.round(((currentIdx + 1) / stages.length) * 100) : 0;
+
+  return (
+    <Card className="border-primary/20 bg-gradient-to-r from-primary/5 to-blue-50/50">
+      <CardContent className="p-4 sm:p-5">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <FileCheck className="h-5 w-5 text-primary" />
+            <span className="font-semibold">{prProgramLabel(app.program)}</span>
+            <Badge variant={app.current_stage === "approved" ? "success" : app.current_stage === "refused" ? "danger" : "warning"}>
+              {prStageLabel(app.current_stage)}
+            </Badge>
+          </div>
+          <Link href="/pr-tracker">
+            <Button variant="ghost" size="sm">
+              Details <ChevronRight className="h-3 w-3 ml-1" />
+            </Button>
+          </Link>
+        </div>
+        <div className="w-full bg-muted rounded-full h-2">
+          <div className="bg-primary h-2 rounded-full transition-all duration-700" style={{ width: `${progress}%` }} />
+        </div>
+        <div className="flex justify-between text-xs text-muted-foreground mt-1.5">
+          <span>Profile Created</span>
+          <span>{progress}%</span>
+          <span>PR Approved</span>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

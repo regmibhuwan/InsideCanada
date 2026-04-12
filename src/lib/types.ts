@@ -123,8 +123,70 @@ export interface Profile {
   immigration_status: ImmigrationStatus;
   pgwp_stream?: '3_year' | '18_month' | 'other';
   onboarding_completed: boolean;
+  has_applied_pr: boolean;
+  pr_application_program?: string;
   created_at: string;
   updated_at: string;
+}
+
+export type PRApplicationStage =
+  | 'profile_created'
+  | 'ita_received'
+  | 'submitted'
+  | 'aor_received'
+  | 'biometrics_requested'
+  | 'medical_requested'
+  | 'background_check'
+  | 'additional_docs'
+  | 'decision_made'
+  | 'approved'
+  | 'refused'
+  | 'withdrawn';
+
+export interface PRApplication {
+  id: string;
+  user_id: string;
+  program: string;
+  application_number?: string;
+  submission_date?: string;
+  aor_date?: string;
+  biometrics_date?: string;
+  biometrics_done: boolean;
+  medical_exam_date?: string;
+  medical_passed: boolean;
+  background_check_started?: string;
+  additional_docs_requested: boolean;
+  additional_docs_submitted?: string;
+  gcms_notes_ordered: boolean;
+  ita_date?: string;
+  ita_crs_score?: number;
+  noc_code_applied?: string;
+  province_applied?: string;
+  pnp_stream?: string;
+  current_stage: PRApplicationStage;
+  decision_date?: string;
+  decision_result?: 'approved' | 'refused' | 'withdrawn';
+  copr_date?: string;
+  pr_card_date?: string;
+  landing_date?: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DrawInfo {
+  date: string;
+  program: string;
+  crs_cutoff: number;
+  invitations: number;
+  tie_breaking_rule?: string;
+  noc_categories?: string[];
+}
+
+export interface ProcessingTime {
+  program: string;
+  estimated_months: number;
+  last_updated: string;
 }
 
 export interface Permit {
@@ -299,6 +361,7 @@ export interface UserCase {
   documents: Document[];
   milestones: Milestone[];
   riskAlerts: RiskAlert[];
+  prApplications: PRApplication[];
 }
 
 export interface EligibilityResult {

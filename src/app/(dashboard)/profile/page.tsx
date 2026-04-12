@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useCase } from "@/lib/use-case";
 import { createClient } from "@/lib/supabase/client";
-import { formatDate, statusLabel, permitLabel } from "@/lib/utils";
+import { formatDate, statusLabel, permitLabel, sanitizeForDB, prStageLabel, prProgramLabel } from "@/lib/utils";
 import { PROVINCES, TEER_LABELS } from "@/lib/constants";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import {
   User, Shield, BookOpen, Briefcase, GraduationCap, Languages,
-  Plus, Loader2, Save, Trash2, Calendar
+  Plus, Loader2, Save, Trash2, Calendar, FileCheck
 } from "lucide-react";
 
 export default function ProfilePage() {
@@ -40,43 +40,36 @@ export default function ProfilePage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-3 sm:grid-cols-6 w-full">
+        <TabsList className="grid grid-cols-4 sm:grid-cols-7 w-full">
           <TabsTrigger value="personal"><User className="h-4 w-4 mr-1.5 hidden sm:inline" />Personal</TabsTrigger>
           <TabsTrigger value="permits"><Shield className="h-4 w-4 mr-1.5 hidden sm:inline" />Permits</TabsTrigger>
           <TabsTrigger value="passport"><BookOpen className="h-4 w-4 mr-1.5 hidden sm:inline" />Passport</TabsTrigger>
           <TabsTrigger value="work"><Briefcase className="h-4 w-4 mr-1.5 hidden sm:inline" />Work</TabsTrigger>
           <TabsTrigger value="education"><GraduationCap className="h-4 w-4 mr-1.5 hidden sm:inline" />Education</TabsTrigger>
           <TabsTrigger value="language"><Languages className="h-4 w-4 mr-1.5 hidden sm:inline" />Language</TabsTrigger>
+          <TabsTrigger value="pr_application"><FileCheck className="h-4 w-4 mr-1.5 hidden sm:inline" />PR App</TabsTrigger>
         </TabsList>
 
-        {/* Personal Info */}
         <TabsContent value="personal">
           <PersonalInfoTab profile={userCase.profile} refetch={refetch} />
         </TabsContent>
-
-        {/* Permits */}
         <TabsContent value="permits">
           <PermitsTab permits={userCase.permits} profileId={userCase.profile?.id} refetch={refetch} />
         </TabsContent>
-
-        {/* Passport */}
         <TabsContent value="passport">
           <PassportTab passports={userCase.passports} profileId={userCase.profile?.id} refetch={refetch} />
         </TabsContent>
-
-        {/* Work History */}
         <TabsContent value="work">
           <WorkHistoryTab workHistory={userCase.workHistory} profileId={userCase.profile?.id} refetch={refetch} />
         </TabsContent>
-
-        {/* Education */}
         <TabsContent value="education">
           <EducationTab educationHistory={userCase.educationHistory} profileId={userCase.profile?.id} refetch={refetch} />
         </TabsContent>
-
-        {/* Language Tests */}
         <TabsContent value="language">
           <LanguageTab languageTests={userCase.languageTests} profileId={userCase.profile?.id} refetch={refetch} />
+        </TabsContent>
+        <TabsContent value="pr_application">
+          <PRApplicationTab prApplications={userCase.prApplications} profile={userCase.profile} profileId={userCase.profile?.id} refetch={refetch} />
         </TabsContent>
       </Tabs>
     </div>
@@ -93,13 +86,15 @@ function PersonalInfoTab({ profile, refetch }: { profile: any; refetch: () => vo
     current_province: profile?.current_province || "",
     immigration_status: profile?.immigration_status || "pgwp_holder",
     pgwp_stream: profile?.pgwp_stream || "",
+    has_applied_pr: profile?.has_applied_pr || false,
   });
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
     setSaving(true);
     const supabase = createClient();
-    await supabase.from("profiles").update(form).eq("id", profile.id);
+    const data = sanitizeForDB({ ...form });
+    await supabase.from("profiles").update(data).eq("id", profile.id);
     await refetch();
     setSaving(false);
   }
@@ -170,6 +165,22 @@ function PersonalInfoTab({ profile, refetch }: { profile: any; refetch: () => vo
             </div>
           )}
         </div>
+
+        <div className="border-t pt-4">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.has_applied_pr}
+              onChange={e => setForm({ ...form, has_applied_pr: e.target.checked })}
+              className="rounded h-5 w-5"
+            />
+            <div>
+              <p className="font-medium">I have already applied for Permanent Residency</p>
+              <p className="text-sm text-muted-foreground">Enable PR application tracking, draw monitoring, and processing time updates</p>
+            </div>
+          </label>
+        </div>
+
         <Button onClick={handleSave} disabled={saving}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           Save Changes
@@ -190,7 +201,8 @@ function PermitsTab({ permits, profileId, refetch }: { permits: any[]; profileId
   async function handleAdd() {
     setSaving(true);
     const supabase = createClient();
-    await supabase.from("permits").insert({ ...form, user_id: profileId, status: "active" });
+    const data = sanitizeForDB({ ...form, user_id: profileId, status: "active" });
+    await supabase.from("permits").insert(data);
     setOpen(false);
     setForm({ permit_type: "pgwp", permit_number: "", issue_date: "", expiry_date: "", employer_name: "", notes: "", is_maintained_status: false, extension_applied: false });
     await refetch();
@@ -313,7 +325,8 @@ function PassportTab({ passports, profileId, refetch }: { passports: any[]; prof
   async function handleAdd() {
     setSaving(true);
     const supabase = createClient();
-    await supabase.from("passports").insert({ ...form, user_id: profileId });
+    const data = sanitizeForDB({ ...form, user_id: profileId });
+    await supabase.from("passports").insert(data);
     setForm({ country_of_issue: "", expiry_date: "", passport_number: "" });
     await refetch();
     setSaving(false);
@@ -353,22 +366,40 @@ function PassportTab({ passports, profileId, refetch }: { passports: any[]; prof
 }
 
 function WorkHistoryTab({ workHistory, profileId, refetch }: { workHistory: any[]; profileId: string; refetch: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({
+  const defaultForm = {
     job_title: "", employer_name: "", noc_code: "", teer_category: "",
     is_canadian_experience: true, province: "", city: "",
     start_date: "", end_date: "", is_current: false, hours_per_week: 40,
     is_full_time: true, duties: "",
-  });
+  };
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
 
   async function handleAdd() {
     setSaving(true);
     const supabase = createClient();
-    await supabase.from("work_history").insert({ ...form, user_id: profileId });
+    const data = sanitizeForDB({
+      ...form,
+      user_id: profileId,
+      end_date: form.is_current ? null : form.end_date,
+    });
+    const { error } = await supabase.from("work_history").insert(data);
+    if (error) {
+      console.error("Failed to add work history:", error);
+      setSaving(false);
+      return;
+    }
     setOpen(false);
+    setForm(defaultForm);
     await refetch();
     setSaving(false);
+  }
+
+  async function handleDelete(id: string) {
+    const supabase = createClient();
+    await supabase.from("work_history").delete().eq("id", id);
+    await refetch();
   }
 
   return (
@@ -402,9 +433,10 @@ function WorkHistoryTab({ workHistory, profileId, refetch }: { workHistory: any[
                 </div>
                 <div className="space-y-2">
                   <Label>TEER Category</Label>
-                  <Select value={form.teer_category} onValueChange={v => setForm({ ...form, teer_category: v })}>
+                  <Select value={form.teer_category || "__none"} onValueChange={v => setForm({ ...form, teer_category: v === "__none" ? "" : v })}>
                     <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__none">Not specified</SelectItem>
                       {Object.entries(TEER_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
                     </SelectContent>
                   </Select>
@@ -422,7 +454,7 @@ function WorkHistoryTab({ workHistory, profileId, refetch }: { workHistory: any[
               </div>
               <div className="flex items-center gap-4">
                 <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={form.is_current} onChange={e => setForm({ ...form, is_current: e.target.checked })} className="rounded" />
+                  <input type="checkbox" checked={form.is_current} onChange={e => setForm({ ...form, is_current: e.target.checked, end_date: e.target.checked ? "" : form.end_date })} className="rounded" />
                   Currently working here
                 </label>
                 <label className="flex items-center gap-2 text-sm">
@@ -433,9 +465,10 @@ function WorkHistoryTab({ workHistory, profileId, refetch }: { workHistory: any[
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Province</Label>
-                  <Select value={form.province} onValueChange={v => setForm({ ...form, province: v })}>
+                  <Select value={form.province || "__none"} onValueChange={v => setForm({ ...form, province: v === "__none" ? "" : v })}>
                     <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__none">Not specified</SelectItem>
                       {PROVINCES.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
@@ -466,16 +499,21 @@ function WorkHistoryTab({ workHistory, profileId, refetch }: { workHistory: any[
         ) : (
           <div className="space-y-3">
             {workHistory.map((w) => (
-              <div key={w.id} className="p-4 rounded-lg border">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium">{w.job_title}</p>
-                  {w.is_canadian_experience && <Badge variant="success">Canadian</Badge>}
-                  {w.is_current && <Badge variant="default">Current</Badge>}
+              <div key={w.id} className="flex items-center justify-between p-4 rounded-lg border">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium">{w.job_title}</p>
+                    {w.is_canadian_experience && <Badge variant="success">Canadian</Badge>}
+                    {w.is_current && <Badge variant="default">Current</Badge>}
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {w.employer_name} · {formatDate(w.start_date)} — {w.is_current ? "Present" : w.end_date ? formatDate(w.end_date) : ""}
+                  </p>
+                  {w.noc_code && <p className="text-xs text-muted-foreground mt-1">NOC: {w.noc_code} · {w.teer_category ? TEER_LABELS[w.teer_category] : ""}</p>}
                 </div>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {w.employer_name} · {formatDate(w.start_date)} — {w.is_current ? "Present" : w.end_date ? formatDate(w.end_date) : ""}
-                </p>
-                {w.noc_code && <p className="text-xs text-muted-foreground mt-1">NOC: {w.noc_code} · {w.teer_category ? TEER_LABELS[w.teer_category] : ""}</p>}
+                <Button variant="ghost" size="icon" onClick={() => handleDelete(w.id)}>
+                  <Trash2 className="h-4 w-4 text-muted-foreground" />
+                </Button>
               </div>
             ))}
           </div>
@@ -486,22 +524,36 @@ function WorkHistoryTab({ workHistory, profileId, refetch }: { workHistory: any[
 }
 
 function EducationTab({ educationHistory, profileId, refetch }: { educationHistory: any[]; profileId: string; refetch: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({
+  const defaultForm = {
     institution_name: "", program_name: "", credential_type: "bachelors",
     field_of_study: "", is_canadian: true, province: "",
     start_date: "", end_date: "", graduated: false, graduation_date: "",
     eca_completed: false,
-  });
+  };
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
 
   async function handleAdd() {
     setSaving(true);
     const supabase = createClient();
-    await supabase.from("education_history").insert({ ...form, user_id: profileId });
+    const data = sanitizeForDB({ ...form, user_id: profileId });
+    const { error } = await supabase.from("education_history").insert(data);
+    if (error) {
+      console.error("Failed to add education:", error);
+      setSaving(false);
+      return;
+    }
     setOpen(false);
+    setForm(defaultForm);
     await refetch();
     setSaving(false);
+  }
+
+  async function handleDelete(id: string) {
+    const supabase = createClient();
+    await supabase.from("education_history").delete().eq("id", id);
+    await refetch();
   }
 
   return (
@@ -557,6 +609,18 @@ function EducationTab({ educationHistory, profileId, refetch }: { educationHisto
                   <Input type="date" value={form.end_date} onChange={e => setForm({ ...form, end_date: e.target.value })} />
                 </div>
               </div>
+              {form.is_canadian && (
+                <div className="space-y-2">
+                  <Label>Province</Label>
+                  <Select value={form.province || "__none"} onValueChange={v => setForm({ ...form, province: v === "__none" ? "" : v })}>
+                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none">Not specified</SelectItem>
+                      {PROVINCES.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="flex items-center gap-4">
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={form.is_canadian} onChange={e => setForm({ ...form, is_canadian: e.target.checked })} className="rounded" />
@@ -588,13 +652,18 @@ function EducationTab({ educationHistory, profileId, refetch }: { educationHisto
         ) : (
           <div className="space-y-3">
             {educationHistory.map((e) => (
-              <div key={e.id} className="p-4 rounded-lg border">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium">{e.program_name}</p>
-                  {e.is_canadian && <Badge variant="success">Canadian</Badge>}
-                  {e.eca_completed && <Badge variant="default">ECA</Badge>}
+              <div key={e.id} className="flex items-center justify-between p-4 rounded-lg border">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium">{e.program_name}</p>
+                    {e.is_canadian && <Badge variant="success">Canadian</Badge>}
+                    {e.eca_completed && <Badge variant="default">ECA</Badge>}
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">{e.institution_name}</p>
                 </div>
-                <p className="text-sm text-muted-foreground mt-1">{e.institution_name}</p>
+                <Button variant="ghost" size="icon" onClick={() => handleDelete(e.id)}>
+                  <Trash2 className="h-4 w-4 text-muted-foreground" />
+                </Button>
               </div>
             ))}
           </div>
@@ -628,6 +697,11 @@ function LanguageTab({ languageTests, profileId, refetch }: { languageTests: any
       clb_speaking: parseInt(form.clb_speaking) || null,
     };
     await supabase.from("language_tests").insert(data);
+    setForm({
+      test_type: "ielts_general", test_date: "", expiry_date: "",
+      listening_score: "", reading_score: "", writing_score: "", speaking_score: "",
+      overall_score: "", clb_listening: "", clb_reading: "", clb_writing: "", clb_speaking: "",
+    });
     await refetch();
     setSaving(false);
   }
@@ -738,6 +812,278 @@ function LanguageTab({ languageTests, profileId, refetch }: { languageTests: any
             </Button>
           </div>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PRApplicationTab({ prApplications, profile, profileId, refetch }: { prApplications: any[]; profile: any; profileId: string; refetch: () => void }) {
+  const [open, setOpen] = useState(false);
+  const defaultForm = {
+    program: "cec",
+    application_number: "",
+    submission_date: "",
+    aor_date: "",
+    biometrics_date: "",
+    biometrics_done: false,
+    medical_exam_date: "",
+    medical_passed: false,
+    background_check_started: "",
+    additional_docs_requested: false,
+    gcms_notes_ordered: false,
+    ita_date: "",
+    ita_crs_score: "",
+    noc_code_applied: "",
+    province_applied: "",
+    pnp_stream: "",
+    current_stage: "submitted",
+    notes: "",
+  };
+  const [form, setForm] = useState(defaultForm);
+  const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  async function handleAdd() {
+    setSaving(true);
+    const supabase = createClient();
+    const data = sanitizeForDB({
+      ...form,
+      user_id: profileId,
+      ita_crs_score: form.ita_crs_score ? parseInt(form.ita_crs_score) : null,
+    });
+    if (editingId) {
+      await supabase.from("pr_applications").update(data).eq("id", editingId);
+    } else {
+      await supabase.from("pr_applications").insert(data);
+    }
+    if (!profile?.has_applied_pr) {
+      await supabase.from("profiles").update({ has_applied_pr: true, pr_application_program: form.program }).eq("id", profileId);
+    }
+    setOpen(false);
+    setEditingId(null);
+    setForm(defaultForm);
+    await refetch();
+    setSaving(false);
+  }
+
+  function handleEdit(app: any) {
+    setEditingId(app.id);
+    setForm({
+      program: app.program || "cec",
+      application_number: app.application_number || "",
+      submission_date: app.submission_date || "",
+      aor_date: app.aor_date || "",
+      biometrics_date: app.biometrics_date || "",
+      biometrics_done: app.biometrics_done || false,
+      medical_exam_date: app.medical_exam_date || "",
+      medical_passed: app.medical_passed || false,
+      background_check_started: app.background_check_started || "",
+      additional_docs_requested: app.additional_docs_requested || false,
+      gcms_notes_ordered: app.gcms_notes_ordered || false,
+      ita_date: app.ita_date || "",
+      ita_crs_score: app.ita_crs_score?.toString() || "",
+      noc_code_applied: app.noc_code_applied || "",
+      province_applied: app.province_applied || "",
+      pnp_stream: app.pnp_stream || "",
+      current_stage: app.current_stage || "submitted",
+      notes: app.notes || "",
+    });
+    setOpen(true);
+  }
+
+  const PR_STAGES = [
+    { value: "profile_created", label: "EE Profile Created" },
+    { value: "ita_received", label: "ITA Received" },
+    { value: "submitted", label: "Application Submitted" },
+    { value: "aor_received", label: "AOR Received" },
+    { value: "biometrics_requested", label: "Biometrics Requested" },
+    { value: "medical_requested", label: "Medical Exam Requested" },
+    { value: "background_check", label: "Background Check" },
+    { value: "additional_docs", label: "Additional Docs Requested" },
+    { value: "decision_made", label: "Decision Made" },
+    { value: "approved", label: "Approved (COPR)" },
+    { value: "refused", label: "Refused" },
+  ];
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+          <CardTitle>PR Application</CardTitle>
+          <CardDescription>Track your permanent residency application progress and milestones.</CardDescription>
+        </div>
+        <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setEditingId(null); setForm(defaultForm); } }}>
+          <DialogTrigger asChild>
+            <Button size="sm"><Plus className="h-4 w-4" /> {prApplications.length > 0 ? "Add Another" : "Add Application"}</Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader><DialogTitle>{editingId ? "Update PR Application" : "Add PR Application"}</DialogTitle></DialogHeader>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Program</Label>
+                  <Select value={form.program} onValueChange={v => setForm({ ...form, program: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cec">Canadian Experience Class</SelectItem>
+                      <SelectItem value="fsw">Federal Skilled Worker</SelectItem>
+                      <SelectItem value="fst">Federal Skilled Trades</SelectItem>
+                      <SelectItem value="pnp">PNP (non-EE)</SelectItem>
+                      <SelectItem value="pnp_ee">PNP (Express Entry)</SelectItem>
+                      <SelectItem value="atlantic">Atlantic Immigration</SelectItem>
+                      <SelectItem value="rural">Rural & Northern</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Current Stage</Label>
+                  <Select value={form.current_stage} onValueChange={v => setForm({ ...form, current_stage: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {PR_STAGES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Application Number</Label>
+                  <Input value={form.application_number} onChange={e => setForm({ ...form, application_number: e.target.value })} placeholder="e.g., E001234567" />
+                </div>
+                <div className="space-y-2">
+                  <Label>NOC Code Applied</Label>
+                  <Input value={form.noc_code_applied} onChange={e => setForm({ ...form, noc_code_applied: e.target.value })} placeholder="e.g., 21232" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>ITA Date</Label>
+                  <Input type="date" value={form.ita_date} onChange={e => setForm({ ...form, ita_date: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>ITA CRS Score</Label>
+                  <Input type="number" value={form.ita_crs_score} onChange={e => setForm({ ...form, ita_crs_score: e.target.value })} placeholder="e.g., 490" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Submission Date</Label>
+                  <Input type="date" value={form.submission_date} onChange={e => setForm({ ...form, submission_date: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>AOR Date</Label>
+                  <Input type="date" value={form.aor_date} onChange={e => setForm({ ...form, aor_date: e.target.value })} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Biometrics Date</Label>
+                  <Input type="date" value={form.biometrics_date} onChange={e => setForm({ ...form, biometrics_date: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Medical Exam Date</Label>
+                  <Input type="date" value={form.medical_exam_date} onChange={e => setForm({ ...form, medical_exam_date: e.target.value })} />
+                </div>
+              </div>
+              {(form.program === "pnp" || form.program === "pnp_ee") && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Province Applied</Label>
+                    <Select value={form.province_applied || "__none"} onValueChange={v => setForm({ ...form, province_applied: v === "__none" ? "" : v })}>
+                      <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none">Not specified</SelectItem>
+                        {PROVINCES.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>PNP Stream</Label>
+                    <Input value={form.pnp_stream} onChange={e => setForm({ ...form, pnp_stream: e.target.value })} placeholder="e.g., OINP Human Capital" />
+                  </div>
+                </div>
+              )}
+              <div className="flex items-center gap-4 flex-wrap">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={form.biometrics_done} onChange={e => setForm({ ...form, biometrics_done: e.target.checked })} className="rounded" />
+                  Biometrics done
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={form.medical_passed} onChange={e => setForm({ ...form, medical_passed: e.target.checked })} className="rounded" />
+                  Medical passed
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={form.additional_docs_requested} onChange={e => setForm({ ...form, additional_docs_requested: e.target.checked })} className="rounded" />
+                  Additional docs requested
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={form.gcms_notes_ordered} onChange={e => setForm({ ...form, gcms_notes_ordered: e.target.checked })} className="rounded" />
+                  GCMS notes ordered
+                </label>
+              </div>
+              <div className="space-y-2">
+                <Label>Notes</Label>
+                <Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Any details about your application..." />
+              </div>
+              <Button onClick={handleAdd} disabled={saving} className="w-full">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editingId ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                {editingId ? "Update Application" : "Add Application"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </CardHeader>
+      <CardContent>
+        {prApplications.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <FileCheck className="h-10 w-10 mx-auto mb-3 opacity-50" />
+            <p>No PR application tracked yet.</p>
+            <p className="text-sm mt-1">Add your PR application to track progress, get draw updates, and monitor processing times.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {prApplications.map((app) => {
+              const stages = PR_STAGES;
+              const currentIdx = stages.findIndex(s => s.value === app.current_stage);
+              const progress = currentIdx >= 0 ? Math.round(((currentIdx + 1) / stages.length) * 100) : 0;
+
+              return (
+                <div key={app.id} className="p-4 rounded-lg border space-y-3 cursor-pointer hover:border-primary/50 transition-colors" onClick={() => handleEdit(app)}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium">{prProgramLabel(app.program)}</p>
+                      <Badge variant={
+                        app.current_stage === "approved" ? "success" :
+                        app.current_stage === "refused" ? "danger" : "warning"
+                      }>
+                        {prStageLabel(app.current_stage)}
+                      </Badge>
+                    </div>
+                    {app.application_number && <span className="text-xs text-muted-foreground font-mono">{app.application_number}</span>}
+                  </div>
+
+                  <div className="w-full bg-muted rounded-full h-2">
+                    <div
+                      className="bg-primary h-2 rounded-full transition-all duration-500"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-muted-foreground">
+                    {app.ita_date && <span>ITA: {formatDate(app.ita_date)}</span>}
+                    {app.submission_date && <span>Submitted: {formatDate(app.submission_date)}</span>}
+                    {app.aor_date && <span>AOR: {formatDate(app.aor_date)}</span>}
+                    {app.ita_crs_score && <span>CRS: {app.ita_crs_score}</span>}
+                    {app.biometrics_done && <span>Biometrics: Done</span>}
+                    {app.medical_passed && <span>Medical: Passed</span>}
+                    {app.noc_code_applied && <span>NOC: {app.noc_code_applied}</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

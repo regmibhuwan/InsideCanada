@@ -123,3 +123,46 @@ export function calculateCanadianExperienceMonths(
 export function getNextActionDate(): string {
   return format(addDays(new Date(), 1), "yyyy-MM-dd");
 }
+
+export function sanitizeForDB<T extends Record<string, unknown>>(obj: T): T {
+  const result = { ...obj };
+  for (const key in result) {
+    if (result[key] === "") {
+      (result as Record<string, unknown>)[key] = null;
+    }
+  }
+  return result;
+}
+
+export function prStageLabel(stage: string): string {
+  const labels: Record<string, string> = {
+    profile_created: "Express Entry Profile Created",
+    ita_received: "ITA Received",
+    submitted: "Application Submitted",
+    aor_received: "Acknowledgement of Receipt",
+    biometrics_requested: "Biometrics Requested",
+    medical_requested: "Medical Exam Requested",
+    background_check: "Background Check in Progress",
+    additional_docs: "Additional Documents Requested",
+    decision_made: "Decision Made",
+    approved: "Approved (COPR)",
+    refused: "Refused",
+    withdrawn: "Withdrawn",
+  };
+  return labels[stage] || stage;
+}
+
+export function prProgramLabel(program: string): string {
+  const labels: Record<string, string> = {
+    cec: "Canadian Experience Class",
+    fsw: "Federal Skilled Worker",
+    fst: "Federal Skilled Trades",
+    pnp: "Provincial Nominee Program",
+    pnp_ee: "PNP Express Entry",
+    sponsorship: "Family Sponsorship",
+    atlantic: "Atlantic Immigration Program",
+    rural: "Rural & Northern Immigration",
+    other: "Other",
+  };
+  return labels[program] || program;
+}

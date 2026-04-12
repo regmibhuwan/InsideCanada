@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { UserCase, Profile, Permit, Passport, LanguageTest, WorkHistory, EducationHistory, Document, Milestone, RiskAlert } from "./types";
+import type { UserCase, Profile, Permit, Passport, LanguageTest, WorkHistory, EducationHistory, Document, Milestone, RiskAlert, PRApplication } from "./types";
 
 const emptyCase: UserCase = {
   profile: null as unknown as Profile,
@@ -14,6 +14,7 @@ const emptyCase: UserCase = {
   documents: [],
   milestones: [],
   riskAlerts: [],
+  prApplications: [],
 };
 
 export function useCase() {
@@ -40,6 +41,7 @@ export function useCase() {
       { data: documents },
       { data: milestones },
       { data: riskAlerts },
+      { data: prApplications },
     ] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", user.id).single(),
       supabase.from("permits").select("*").eq("user_id", user.id).order("expiry_date", { ascending: true }),
@@ -50,6 +52,7 @@ export function useCase() {
       supabase.from("documents").select("*").eq("user_id", user.id).order("uploaded_at", { ascending: false }),
       supabase.from("milestones").select("*").eq("user_id", user.id).order("sort_order", { ascending: true }),
       supabase.from("risk_alerts").select("*").eq("user_id", user.id).eq("is_dismissed", false).order("created_at", { ascending: false }),
+      supabase.from("pr_applications").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
     ]);
 
     setUserCase({
@@ -62,6 +65,7 @@ export function useCase() {
       documents: (documents || []) as Document[],
       milestones: (milestones || []) as Milestone[],
       riskAlerts: (riskAlerts || []) as RiskAlert[],
+      prApplications: (prApplications || []) as PRApplication[],
     });
     setLoading(false);
   }, []);

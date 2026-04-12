@@ -54,6 +54,28 @@ PGWP Stream: ${userCase.profile.pgwp_stream || "N/A"}`);
     parts.push(`Types: ${types.join(", ")}`);
   }
 
+  if (userCase.profile?.has_applied_pr) {
+    parts.push("\n--- PR APPLICATION STATUS: APPLIED ---");
+  }
+
+  if (userCase.prApplications?.length) {
+    parts.push("\n--- PR APPLICATIONS ---");
+    for (const app of userCase.prApplications) {
+      parts.push(`- Program: ${app.program}, Stage: ${app.current_stage}`);
+      if (app.application_number) parts.push(`  Application #: ${app.application_number}`);
+      if (app.ita_date) parts.push(`  ITA Date: ${app.ita_date}`);
+      if (app.ita_crs_score) parts.push(`  CRS Score at ITA: ${app.ita_crs_score}`);
+      if (app.submission_date) parts.push(`  Submitted: ${app.submission_date}`);
+      if (app.aor_date) parts.push(`  AOR: ${app.aor_date}`);
+      parts.push(`  Biometrics: ${app.biometrics_done ? "Done" : "Pending"}${app.biometrics_date ? ` (${app.biometrics_date})` : ""}`);
+      parts.push(`  Medical: ${app.medical_passed ? "Passed" : "Pending"}${app.medical_exam_date ? ` (${app.medical_exam_date})` : ""}`);
+      if (app.background_check_started) parts.push(`  Background Check Started: ${app.background_check_started}`);
+      if (app.noc_code_applied) parts.push(`  NOC: ${app.noc_code_applied}`);
+      if (app.additional_docs_requested) parts.push(`  ⚠️ Additional documents were requested`);
+      if (app.gcms_notes_ordered) parts.push(`  GCMS notes have been ordered`);
+    }
+  }
+
   return parts.join("\n");
 }
 

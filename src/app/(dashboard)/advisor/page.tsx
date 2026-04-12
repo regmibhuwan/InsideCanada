@@ -14,7 +14,7 @@ interface Message {
   timestamp: string;
 }
 
-const SUGGESTED_QUESTIONS = [
+const PRE_APPLICATION_QUESTIONS = [
   "What's the best PR pathway for me right now?",
   "My PGWP is expiring soon — what are my options?",
   "How do I apply for a bridging open work permit?",
@@ -23,6 +23,17 @@ const SUGGESTED_QUESTIONS = [
   "What documents do I need for Express Entry?",
   "Can I change employers on my current work permit?",
   "How long does the PR process take?",
+];
+
+const POST_APPLICATION_QUESTIONS = [
+  "How long should I expect to wait for my PR decision?",
+  "What do I do if IRCC requests additional documents?",
+  "Should I order GCMS notes to check my progress?",
+  "My work permit expires before PR — what are my options?",
+  "What's happening with recent Express Entry draws?",
+  "When should I do my medical exam?",
+  "What does my current application stage mean?",
+  "Are there faster alternative pathways I should consider?",
 ];
 
 export default function AdvisorPage() {
@@ -124,7 +135,7 @@ export default function AdvisorPage() {
                 deadlines, eligibility, or next steps.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-lg">
-                {SUGGESTED_QUESTIONS.map((q, i) => (
+                {(userCase.profile?.has_applied_pr ? POST_APPLICATION_QUESTIONS : PRE_APPLICATION_QUESTIONS).map((q, i) => (
                   <button
                     key={i}
                     onClick={() => sendMessage(q)}
