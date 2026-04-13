@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useCase } from "@/lib/use-case";
 import { prStageLabel, prProgramLabel } from "@/lib/utils";
 import { getCategoryLabel, getCategoryColor, getUrgencyColor } from "@/lib/ircc-sources";
@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Loader2, Clock, AlertTriangle, Lightbulb, RefreshCw, FileCheck,
   ExternalLink, Shield, Newspaper, Filter, Zap, Target,
-  ChevronDown, ChevronUp, Info, CheckCircle2, Link2
+  ChevronDown, ChevronUp, Info, CheckCircle2, Link2, Globe
 } from "lucide-react";
 
 interface ScoredUpdate {
@@ -41,6 +41,28 @@ interface ScoredUpdate {
   };
 }
 
+interface LiveContextCard {
+  type: string;
+  title: string;
+  summary: string;
+  whyThisMatters: string;
+  nextAction: string;
+  sourceName: string;
+  sourceUrl: string;
+  category: string;
+  relevanceToUser: string;
+  fetchedAt?: string;
+}
+
+interface LiveContextMeta {
+  sourcesFetched: number;
+  sourcesAttempted: number;
+  fetchedAt: string;
+  sourceNames: string[];
+  generatedBy?: string;
+  fromCache?: boolean;
+}
+
 export default function PRTrackerPage() {
   const { userCase, loading } = useCase();
   const [updates, setUpdates] = useState<ScoredUpdate[]>([]);
@@ -51,8 +73,10 @@ export default function PRTrackerPage() {
   const [aiData, setAiData] = useState<any>(null);
   const [loadingAI, setLoadingAI] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
-  const [liveContext, setLiveContext] = useState<any[]>([]);
+  const [liveContext, setLiveContext] = useState<LiveContextCard[]>([]);
+  const [liveContextMeta, setLiveContextMeta] = useState<LiveContextMeta | null>(null);
   const [loadingContext, setLoadingContext] = useState(false);
+  const [contextError, setContextError] = useState<string | null>(null);
 
   const hasApplied = userCase.profile?.has_applied_pr;
   const prApps = userCase.prApplications || [];
@@ -60,40 +84,12 @@ export default function PRTrackerPage() {
   const userProgram = latestApp?.program || userCase.profile?.pr_application_program || userCase.profile?.target_pr_stream || "";
   const userProvince = latestApp?.province_applied || userCase.profile?.current_province || "";
 
-  useEffect(() => {
-    if (!loading) {
-      fetchFeed();
-    }
-  }, [loading]);
-
-  async function fetchFeed() {
-    setLoadingFeed(true);
-    setFeedError(null);
-    try {
-      const res = await fetch("/api/immigration/user-impact");
-      if (res.ok) {
-        const data = await res.json();
-        const fetched = data.updates || [];
-        setUpdates(fetched);
-        if (fetched.length === 0) {
-          fetchLiveContext();
-        }
-      } else {
-        setFeedError("Could not load updates.");
-        fetchLiveContext();
-      }
-    } catch {
-      setFeedError("Connection error.");
-      fetchLiveContext();
-    }
-    setLoadingFeed(false);
-  }
-
-  async function fetchLiveContext() {
+  const fetchLiveContext = useCallback(async () => {
     setLoadingContext(true);
+    setContextError(null);
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 35000);
+      const timeout = setTimeout(() => controller.abort(), 40000);
       const res = await fetch("/api/ai/live-context", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -109,11 +105,46 @@ export default function PRTrackerPage() {
       clearTimeout(timeout);
       if (res.ok) {
         const data = await res.json();
-        setLiveContext(data.cards || []);
+        const cards = data.cards || [];
+        setLiveContext(cards);
+        if (data._meta) setLiveContextMeta(data._meta);
+        if (cards.length === 0) {
+          setContextError("No context cards returned. Try refreshing.");
+        }
+      } else {
+        setContextError("Could not load live context.");
       }
-    } catch { /* silent */ }
+    } catch {
+      setContextError("Connection timed out while fetching live context.");
+    }
     setLoadingContext(false);
-  }
+  }, [userProvince, userProgram, hasApplied, userCase.profile?.immigration_status, latestApp?.noc_code_applied, userCase.workHistory]);
+
+  const fetchFeed = useCallback(async () => {
+    setLoadingFeed(true);
+    setFeedError(null);
+    try {
+      const res = await fetch("/api/immigration/user-impact");
+      if (res.ok) {
+        const data = await res.json();
+        const fetched = data.updates || [];
+        setUpdates(fetched);
+      } else {
+        setFeedError("Could not load updates.");
+      }
+    } catch {
+      setFeedError("Connection error.");
+    }
+    setLoadingFeed(false);
+  }, []);
+
+  // Always fetch both feed AND live context on load
+  useEffect(() => {
+    if (!loading) {
+      fetchFeed();
+      fetchLiveContext();
+    }
+  }, [loading, fetchFeed, fetchLiveContext]);
 
   async function fetchAIAnalysis() {
     setLoadingAI(true);
@@ -172,8 +203,8 @@ export default function PRTrackerPage() {
             {userProvince && <span> · Prioritized for {userProvince}</span>}
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={fetchFeed} disabled={loadingFeed}>
-          <RefreshCw className={`h-4 w-4 ${loadingFeed ? "animate-spin" : ""}`} /> Refresh
+        <Button variant="outline" size="sm" onClick={() => { fetchFeed(); fetchLiveContext(); }} disabled={loadingFeed || loadingContext}>
+          <RefreshCw className={`h-4 w-4 ${loadingFeed || loadingContext ? "animate-spin" : ""}`} /> Refresh
         </Button>
       </div>
 
@@ -196,31 +227,33 @@ export default function PRTrackerPage() {
           </TabsTrigger>
         </TabsList>
 
-        {/* For You — relevance-scored */}
+        {/* For You tab */}
         <TabsContent value="relevant">
           <div className="space-y-4">
-            {loadingFeed ? (
-              <LoadingState />
-            ) : feedError ? (
-              <ErrorState message={feedError} onRetry={fetchFeed} />
-            ) : !hasData && liveContext.length === 0 && !loadingContext ? (
-              <EmptyState onLoadContext={fetchLiveContext} />
-            ) : !hasData || highRelevance.length === 0 ? (
-              <LiveContextSection
-                liveContext={liveContext}
-                loadingContext={loadingContext}
-                updates={highRelevance}
-                onLoadContext={fetchLiveContext}
-              />
+            {loadingFeed && loadingContext ? (
+              <LiveLoadingState province={userProvince} />
             ) : (
-              highRelevance.map(update => (
-                <VerifiedUpdateCard key={update.id} update={update} />
-              ))
+              <>
+                {/* Show verified high relevance updates first */}
+                {highRelevance.map(update => (
+                  <VerifiedUpdateCard key={update.id} update={update} />
+                ))}
+
+                {/* Always show live context section */}
+                <LiveContextSection
+                  liveContext={liveContext}
+                  loadingContext={loadingContext}
+                  meta={liveContextMeta}
+                  error={contextError}
+                  onRefresh={fetchLiveContext}
+                  hasVerifiedUpdates={highRelevance.length > 0}
+                />
+              </>
             )}
           </div>
         </TabsContent>
 
-        {/* All Updates */}
+        {/* All Updates tab */}
         <TabsContent value="all-updates">
           <div className="space-y-4">
             {hasData && (
@@ -233,34 +266,37 @@ export default function PRTrackerPage() {
               </div>
             )}
 
-            {loadingFeed ? (
-              <LoadingState />
-            ) : feedError ? (
-              <ErrorState message={feedError} onRetry={fetchFeed} />
-            ) : !hasData && liveContext.length === 0 && !loadingContext ? (
-              <EmptyState onLoadContext={fetchLiveContext} />
-            ) : !hasData ? (
-              <LiveContextSection
-                liveContext={liveContext}
-                loadingContext={loadingContext}
-                updates={[]}
-                onLoadContext={fetchLiveContext}
-              />
-            ) : filteredUpdates.length === 0 ? (
-              <Card>
-                <CardContent className="py-8 text-center text-sm text-muted-foreground">
-                  No updates in this category.
-                </CardContent>
-              </Card>
+            {loadingFeed && loadingContext ? (
+              <LiveLoadingState province={userProvince} />
             ) : (
-              filteredUpdates.map(update => (
-                <VerifiedUpdateCard key={update.id} update={update} />
-              ))
+              <>
+                {filteredUpdates.length > 0 ? (
+                  filteredUpdates.map(update => (
+                    <VerifiedUpdateCard key={update.id} update={update} />
+                  ))
+                ) : hasData ? (
+                  <Card>
+                    <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                      No updates in this category.
+                    </CardContent>
+                  </Card>
+                ) : null}
+
+                {/* Show live context below verified updates */}
+                <LiveContextSection
+                  liveContext={liveContext}
+                  loadingContext={loadingContext}
+                  meta={liveContextMeta}
+                  error={contextError}
+                  onRefresh={fetchLiveContext}
+                  hasVerifiedUpdates={hasData}
+                />
+              </>
             )}
           </div>
         </TabsContent>
 
-        {/* AI Analysis */}
+        {/* AI Analysis tab */}
         <TabsContent value="analysis">
           <div className="space-y-4">
             <Card className="border-amber-200 bg-amber-50/30">
@@ -304,7 +340,6 @@ export default function PRTrackerPage() {
 
             {aiData && (
               <div className="space-y-4">
-                {/* Stream status */}
                 {aiData.yourStream && (
                   <Card>
                     <CardHeader>
@@ -334,7 +369,6 @@ export default function PRTrackerPage() {
                   </Card>
                 )}
 
-                {/* Relevant updates from AI */}
                 {aiData.relevantUpdates?.length > 0 && (
                   <Card>
                     <CardHeader>
@@ -368,7 +402,6 @@ export default function PRTrackerPage() {
                   </Card>
                 )}
 
-                {/* Processing times */}
                 {aiData.processingTimes && (
                   <Card>
                     <CardHeader>
@@ -395,7 +428,6 @@ export default function PRTrackerPage() {
                   </Card>
                 )}
 
-                {/* Advice */}
                 {aiData.advice && (
                   <Card>
                     <CardHeader>
@@ -422,7 +454,7 @@ export default function PRTrackerPage() {
           </div>
         </TabsContent>
 
-        {/* Official Sources */}
+        {/* Official Sources tab */}
         <TabsContent value="sources">
           <Card>
             <CardHeader>
@@ -468,6 +500,10 @@ export default function PRTrackerPage() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Sub components
+// ---------------------------------------------------------------------------
+
 function SourceGroup({ title, sources }: { title: string; sources: { name: string; url: string }[] }) {
   return (
     <div>
@@ -512,7 +548,6 @@ function VerifiedUpdateCard({ update }: { update: ScoredUpdate }) {
               {expanded ? <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />}
             </div>
 
-            {/* Badges */}
             <div className="flex items-center gap-1.5 flex-wrap mt-1.5 mb-2">
               <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${getCategoryColor(update.category)}`}>
                 {getCategoryLabel(update.category)}
@@ -538,7 +573,6 @@ function VerifiedUpdateCard({ update }: { update: ScoredUpdate }) {
 
             <p className="text-sm text-muted-foreground">{update.plain_language || update.summary}</p>
 
-            {/* Why this matters */}
             {update.whyThisMatters && update.relevanceScore >= 20 && (
               <p className="text-xs text-primary mt-2 font-medium flex items-center gap-1">
                 <Target className="h-3 w-3 shrink-0" />
@@ -546,7 +580,6 @@ function VerifiedUpdateCard({ update }: { update: ScoredUpdate }) {
               </p>
             )}
 
-            {/* Source link always visible */}
             <div className="flex items-center justify-between mt-2">
               {update.source_url && (
                 <a href={update.source_url} target="_blank" rel="noopener noreferrer"
@@ -557,7 +590,6 @@ function VerifiedUpdateCard({ update }: { update: ScoredUpdate }) {
               )}
             </div>
 
-            {/* Expanded details */}
             {expanded && (
               <div className="mt-3 space-y-3 border-t pt-3">
                 {update.summary !== update.plain_language && update.summary && (
@@ -649,12 +681,18 @@ function ApplicationProgressCard({ app }: { app: any }) {
   );
 }
 
-function LoadingState() {
+function LiveLoadingState({ province }: { province: string }) {
   return (
-    <div className="flex flex-col items-center py-12 text-muted-foreground">
-      <Loader2 className="h-8 w-8 animate-spin mb-3" />
-      <p className="text-sm">Loading verified updates...</p>
-    </div>
+    <Card>
+      <CardContent className="py-12 text-center">
+        <div className="flex items-center justify-center gap-2 mb-4">
+          <Globe className="h-6 w-6 text-blue-500 animate-pulse" />
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        </div>
+        <p className="text-sm font-medium">Checking IRCC notices, processing times{province ? `, and ${province} immigration` : ", and provincial programs"}...</p>
+        <p className="text-xs text-muted-foreground mt-2">Fetching the latest from official government pages</p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -672,68 +710,74 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
   );
 }
 
-function LiveContextSection({ liveContext, loadingContext, updates, onLoadContext }: {
-  liveContext: any[];
+function LiveContextSection({ liveContext, loadingContext, meta, error, onRefresh, hasVerifiedUpdates }: {
+  liveContext: LiveContextCard[];
   loadingContext: boolean;
-  updates: ScoredUpdate[];
-  onLoadContext: () => void;
+  meta: LiveContextMeta | null;
+  error: string | null;
+  onRefresh: () => void;
+  hasVerifiedUpdates: boolean;
 }) {
+  if (loadingContext && liveContext.length === 0) {
+    return <LiveLoadingState province="" />;
+  }
+
+  if (error && liveContext.length === 0) {
+    return (
+      <Card>
+        <CardContent className="flex flex-col items-center py-10">
+          <AlertTriangle className="h-8 w-8 text-amber-500 mb-3" />
+          <p className="text-sm text-muted-foreground mb-4">{error}</p>
+          <Button variant="outline" size="sm" onClick={onRefresh}>
+            <RefreshCw className="h-4 w-4 mr-1" /> Retry Live Context
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (liveContext.length === 0) {
+    return null;
+  }
+
   return (
     <div className="space-y-4">
-      {/* Show any verified updates first */}
-      {updates.map(update => (
-        <VerifiedUpdateCard key={update.id} update={update} />
-      ))}
-
-      {/* Live context intro */}
-      {liveContext.length > 0 && (
-        <div className="flex items-start gap-3 p-4 rounded-xl border border-blue-200 bg-blue-50/50">
-          <Info className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
-          <div>
+      {/* Header banner */}
+      <div className="flex items-start gap-3 p-4 rounded-xl border border-blue-200 bg-blue-50/50">
+        <Globe className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
+        <div className="flex-1">
+          <div className="flex items-center justify-between gap-2">
             <p className="text-sm font-medium text-blue-900">
-              No new rule changes detected today — here&apos;s the latest official context for your path.
+              {hasVerifiedUpdates
+                ? `Found ${liveContext.length} current facts for your path`
+                : `Found ${liveContext.length} current facts from official sources`}
             </p>
-            <p className="text-xs text-blue-700 mt-1">
-              These cards are generated from live official source pages. All facts come directly from the source.
-            </p>
+            {loadingContext && <Loader2 className="h-4 w-4 animate-spin text-blue-500 shrink-0" />}
           </div>
+          <p className="text-xs text-blue-700 mt-1">
+            {meta?.sourcesFetched
+              ? `Checked ${meta.sourcesFetched} of ${meta.sourcesAttempted} official pages`
+              : "All facts sourced from official government pages"}
+            {meta?.fetchedAt && (
+              <span> · Last checked {formatTimestamp(meta.fetchedAt)}</span>
+            )}
+            {meta?.fromCache && <span> (cached)</span>}
+          </p>
         </div>
-      )}
+        <Button variant="ghost" size="sm" className="shrink-0 text-blue-700 hover:text-blue-900 hover:bg-blue-100" onClick={onRefresh} disabled={loadingContext}>
+          <RefreshCw className={`h-3.5 w-3.5 ${loadingContext ? "animate-spin" : ""}`} />
+        </Button>
+      </div>
 
-      {loadingContext && (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3" />
-            <p className="text-sm font-medium">Fetching live context from official sources...</p>
-            <p className="text-xs mt-1">Checking IRCC, provincial, and eligibility pages</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Live context cards */}
+      {/* Context cards */}
       {liveContext.map((card, i) => (
-        <LiveContextCard key={i} card={card} />
+        <LiveContextCardComponent key={i} card={card} />
       ))}
-
-      {!loadingContext && liveContext.length === 0 && updates.length === 0 && (
-        <Card>
-          <CardContent className="py-10 text-center">
-            <Newspaper className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-50" />
-            <h3 className="font-semibold mb-2">Loading live context...</h3>
-            <p className="text-sm text-muted-foreground max-w-md mx-auto mb-4">
-              We&apos;ll fetch the latest from official IRCC and provincial pages for you.
-            </p>
-            <Button onClick={onLoadContext} size="sm">
-              <Zap className="h-4 w-4 mr-1" /> Load Live Context
-            </Button>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }
 
-function LiveContextCard({ card }: { card: any }) {
+function LiveContextCardComponent({ card }: { card: LiveContextCard }) {
   const [expanded, setExpanded] = useState(false);
 
   const categoryColors: Record<string, string> = {
@@ -754,6 +798,9 @@ function LiveContextCard({ card }: { card: any }) {
             <div className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-500 text-white">
               LIVE
             </div>
+            {card.relevanceToUser === "high" && (
+              <span className="text-[10px] text-primary font-medium">High</span>
+            )}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2">
@@ -767,11 +814,14 @@ function LiveContextCard({ card }: { card: any }) {
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-800 flex items-center gap-0.5">
                 <Shield className="h-2.5 w-2.5" /> Official Source
               </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted">Just fetched</span>
+              {card.fetchedAt && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted">
+                  {formatTimestamp(card.fetchedAt)}
+                </span>
+              )}
             </div>
             <p className="text-sm text-muted-foreground">{card.summary}</p>
 
-            {/* Why this matters */}
             {card.whyThisMatters && (
               <p className="text-xs text-primary mt-2 font-medium flex items-center gap-1">
                 <Target className="h-3 w-3 shrink-0" />
@@ -779,7 +829,6 @@ function LiveContextCard({ card }: { card: any }) {
               </p>
             )}
 
-            {/* Next action */}
             {card.nextAction && (
               <div className="mt-2 p-2 bg-amber-50 rounded border border-amber-200">
                 <p className="text-xs font-medium text-amber-900 flex items-center gap-1">
@@ -789,7 +838,6 @@ function LiveContextCard({ card }: { card: any }) {
               </div>
             )}
 
-            {/* Source link */}
             {card.sourceUrl && (
               <a href={card.sourceUrl} target="_blank" rel="noopener noreferrer"
                 className="text-xs text-blue-600 hover:underline flex items-center gap-1 mt-2"
@@ -799,31 +847,15 @@ function LiveContextCard({ card }: { card: any }) {
             )}
 
             {expanded && (
-              <div className="mt-3 pt-3 border-t text-[11px] text-muted-foreground">
-                <p>Source: {card.sourceName} — {card.sourceUrl}</p>
-                <p>Type: Live context (fetched on-demand from official page)</p>
+              <div className="mt-3 pt-3 border-t text-[11px] text-muted-foreground space-y-0.5">
+                <p>Source: {card.sourceName}</p>
+                <p>URL: {card.sourceUrl}</p>
+                <p>Type: Live context (fetched from official page)</p>
+                {card.fetchedAt && <p>Fetched: {new Date(card.fetchedAt).toLocaleString()}</p>}
               </div>
             )}
           </div>
         </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function EmptyState({ onLoadContext }: { onLoadContext: () => void }) {
-  return (
-    <Card>
-      <CardContent className="flex flex-col items-center py-12">
-        <Newspaper className="h-10 w-10 text-muted-foreground mb-3 opacity-50" />
-        <h3 className="font-semibold mb-2">Let&apos;s get your live context</h3>
-        <p className="text-sm text-muted-foreground text-center max-w-md mb-4">
-          No new rule changes detected yet. We can fetch the latest from official IRCC and
-          provincial pages to show you what&apos;s current for your path.
-        </p>
-        <Button onClick={onLoadContext} size="sm">
-          <Zap className="h-4 w-4 mr-1" /> Load Live Context
-        </Button>
       </CardContent>
     </Card>
   );
@@ -836,4 +868,24 @@ function FilterButton({ label, active, onClick }: { label: string; active: boole
       className={`text-xs px-3 py-1.5 rounded-full transition-colors ${active ? "bg-primary text-white" : "bg-muted hover:bg-muted/80"}`}
     >{label}</button>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function formatTimestamp(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return d.toLocaleDateString("en-CA", { month: "short", day: "numeric" });
+  } catch {
+    return "Recently";
+  }
 }
