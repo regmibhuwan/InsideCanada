@@ -15,7 +15,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -26,8 +25,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  CheckCircle2, Circle, Shield, Loader2, AlertTriangle,
-  FileCheck, Info, ChevronDown, ChevronUp, Zap,
+  CheckCircle2, Circle, Loader2, AlertTriangle,
+  FileCheck, Zap,
   MessageSquare, ArrowRight, XCircle, AlertCircle, Sparkles,
 } from "lucide-react";
 
@@ -74,7 +73,9 @@ export default function DocumentsPage() {
 
   // AI Review state
   const [reviewingDoc, setReviewingDoc] = useState<string | null>(null);
-  const [reviewDetails, setReviewDetails] = useState<string>("");
+  const [singleFiles, setSingleFiles] = useState<File[]>([]);
+  const [bulkFiles, setBulkFiles] = useState<File[]>([]);
+  const [reviewError, setReviewError] = useState<string | null>(null);
   const [singleReview, setSingleReview] = useState<SingleReview | null>(null);
   const [loadingSingleReview, setLoadingSingleReview] = useState(false);
   const [bulkReview, setBulkReview] = useState<BulkReview | null>(null);
@@ -155,6 +156,11 @@ export default function DocumentsPage() {
   }
 
   async function runSingleReview(docKey: string) {
+    if (singleFiles.length === 0) {
+      setReviewError("Please upload the document file first.");
+      return;
+    }
+    setReviewError(null);
     setLoadingSingleReview(true);
     setSingleReview(null);
     try {
@@ -165,27 +171,35 @@ export default function DocumentsPage() {
         checklistStatus[item.key] = { has: r?.has || false, notes: r?.notes || undefined };
       });
 
+      const formData = new FormData();
+      formData.append("mode", "single");
+      formData.append("stream", selectedStream);
+      formData.append("stage", checklist?.stage || "single");
+      formData.append("checklist_status", JSON.stringify(checklistStatus));
+      formData.append("document_key", docKey);
+      for (const file of singleFiles) formData.append("files", file);
+
       const res = await fetch("/api/ai/document-review", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode: "single",
-          stream: selectedStream,
-          stage: checklist?.stage || "single",
-          checklist_status: checklistStatus,
-          document_key: docKey,
-          document_details: reviewDetails,
-        }),
+        body: formData,
       });
 
       if (res.ok) {
         setSingleReview(await res.json());
+      } else {
+        const err = await res.json();
+        setReviewError(err.error || "Review failed.");
       }
     } catch { /* silent */ }
     setLoadingSingleReview(false);
   }
 
   async function runBulkReview() {
+    if (bulkFiles.length === 0) {
+      setReviewError("Please upload all documents before running full package review.");
+      return;
+    }
+    setReviewError(null);
     setLoadingBulkReview(true);
     setBulkReview(null);
     try {
@@ -196,19 +210,23 @@ export default function DocumentsPage() {
         checklistStatus[item.key] = { has: r?.has || false, notes: r?.notes || undefined };
       });
 
+      const formData = new FormData();
+      formData.append("mode", "bulk");
+      formData.append("stream", selectedStream);
+      formData.append("stage", checklist?.stage || "single");
+      formData.append("checklist_status", JSON.stringify(checklistStatus));
+      for (const file of bulkFiles) formData.append("files", file);
+
       const res = await fetch("/api/ai/document-review", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode: "bulk",
-          stream: selectedStream,
-          stage: checklist?.stage || "single",
-          checklist_status: checklistStatus,
-        }),
+        body: formData,
       });
 
       if (res.ok) {
         setBulkReview(await res.json());
+      } else {
+        const err = await res.json();
+        setReviewError(err.error || "Review failed.");
       }
     } catch { /* silent */ }
     setLoadingBulkReview(false);
@@ -376,7 +394,7 @@ export default function DocumentsPage() {
                         checked={readinessMap.get(item.key) || false}
                         saving={saving === item.key}
                         onToggle={() => toggleDocument(item.key, readinessMap.get(item.key) || false)}
-                        onReview={() => { setReviewingDoc(item.key); setReviewDetails(""); setSingleReview(null); setActiveTab("ai-review"); }}
+                        onReview={() => { setReviewingDoc(item.key); setSingleFiles([]); setSingleReview(null); setReviewError(null); setActiveTab("ai-review"); }}
                       />
                     ))}
 
@@ -392,7 +410,7 @@ export default function DocumentsPage() {
                             checked={readinessMap.get(item.key) || false}
                             saving={saving === item.key}
                             onToggle={() => toggleDocument(item.key, readinessMap.get(item.key) || false)}
-                            onReview={() => { setReviewingDoc(item.key); setReviewDetails(""); setSingleReview(null); setActiveTab("ai-review"); }}
+                            onReview={() => { setReviewingDoc(item.key); setSingleFiles([]); setSingleReview(null); setReviewError(null); setActiveTab("ai-review"); }}
                           />
                         ))}
                       </>
@@ -412,10 +430,27 @@ export default function DocumentsPage() {
                   <Zap className="h-5 w-5" /> Full Package Review
                 </CardTitle>
                 <CardDescription>
-                  AI reviews your entire application package based on your checklist status. Blunt, honest, practical.
+                  Upload your full package first, then AI reviews it with blunt and practical feedback.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-3">
+                <div>
+                  <label className="text-sm font-medium mb-1.5 block">Upload full package documents</label>
+                  <input
+                    type="file"
+                    multiple
+                    onChange={(e) => setBulkFiles(Array.from(e.target.files || []))}
+                    className="block w-full text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Upload all required documents for this stream before running full review.
+                  </p>
+                </div>
+                {bulkFiles.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {bulkFiles.length} file(s) selected.
+                  </p>
+                )}
                 <Button onClick={runBulkReview} disabled={loadingBulkReview} className="w-full sm:w-auto">
                   {loadingBulkReview ? (
                     <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Analyzing...</>
@@ -499,13 +534,13 @@ export default function DocumentsPage() {
                   <MessageSquare className="h-5 w-5" /> Single Document Review
                 </CardTitle>
                 <CardDescription>
-                  Select a document and describe what you have. AI will give a direct verdict.
+                  Select a checklist document, upload its file, and run review.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div>
                   <label className="text-sm font-medium mb-1.5 block">Document to Review</label>
-                  <Select value={reviewingDoc || ""} onValueChange={(v) => { setReviewingDoc(v); setSingleReview(null); }}>
+                  <Select value={reviewingDoc || ""} onValueChange={(v) => { setReviewingDoc(v); setSingleFiles([]); setSingleReview(null); setReviewError(null); }}>
                     <SelectTrigger><SelectValue placeholder="Select document" /></SelectTrigger>
                     <SelectContent>
                       {checklist.items.map(item => (
@@ -520,17 +555,14 @@ export default function DocumentsPage() {
                 {reviewingDoc && (
                   <>
                     <div>
-                      <label className="text-sm font-medium mb-1.5 block">
-                        Describe your document
-                      </label>
-                      <Textarea
-                        placeholder="e.g. 'I have my IELTS General results from March 2025: L8.0 R7.5 W7.0 S7.0. The test center was in Halifax.'"
-                        value={reviewDetails}
-                        onChange={e => setReviewDetails(e.target.value)}
-                        rows={3}
+                      <label className="text-sm font-medium mb-1.5 block">Upload document file</label>
+                      <input
+                        type="file"
+                        onChange={(e) => setSingleFiles(Array.from(e.target.files || []))}
+                        className="block w-full text-sm"
                       />
                       <p className="text-xs text-muted-foreground mt-1">
-                        The more detail you provide, the better the review. Include dates, scores, issuer, format.
+                        Upload the actual document. Text description is no longer used.
                       </p>
                     </div>
                     <Button onClick={() => runSingleReview(reviewingDoc)} disabled={loadingSingleReview}
@@ -542,6 +574,12 @@ export default function DocumentsPage() {
                       )}
                     </Button>
                   </>
+                )}
+
+                {reviewError && (
+                  <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-2">
+                    {reviewError}
+                  </div>
                 )}
 
                 {singleReview && (

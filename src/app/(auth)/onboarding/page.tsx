@@ -23,6 +23,7 @@ export default function OnboardingPage() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [profileId, setProfileId] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     full_name: "",
@@ -77,24 +78,45 @@ export default function OnboardingPage() {
       return;
     }
     setSaving(true);
-    const supabase = createClient();
-    const updateData: any = {
-      full_name: form.full_name,
-      date_of_birth: form.date_of_birth || null,
-      nationality: form.nationality || null,
-      phone: form.phone || null,
-      current_city: form.current_city || null,
-      current_province: form.current_province || null,
-      immigration_status: form.immigration_status,
-      pgwp_stream: form.pgwp_stream || null,
-      has_applied_pr: form.has_applied_pr,
-      target_pr_stream: form.target_pr_stream || null,
-      crs_score: form.crs_score ? parseInt(form.crs_score) : null,
-      onboarding_completed: true,
-      onboarding_step: 3,
-    };
-    await supabase.from("profiles").update(updateData).eq("id", profileId);
-    router.push("/dashboard");
+    setSubmitError(null);
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setSubmitError("Your session expired. Please log in again.");
+        router.push("/login");
+        return;
+      }
+
+      const updateData: any = {
+        full_name: form.full_name,
+        date_of_birth: form.date_of_birth || null,
+        nationality: form.nationality || null,
+        phone: form.phone || null,
+        current_city: form.current_city || null,
+        current_province: form.current_province || null,
+        immigration_status: form.immigration_status,
+        pgwp_stream: form.pgwp_stream || null,
+        has_applied_pr: form.has_applied_pr,
+        target_pr_stream: form.target_pr_stream || null,
+        crs_score: form.crs_score ? parseInt(form.crs_score) : null,
+        onboarding_completed: true,
+        onboarding_step: 3,
+      };
+
+      const rowId = profileId || user.id;
+      const { error } = await supabase.from("profiles").update(updateData).eq("id", rowId);
+      if (error) {
+        setSubmitError("Could not finish setup. Please try again.");
+        return;
+      }
+
+      router.push("/dashboard");
+    } catch {
+      setSubmitError("Could not finish setup. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   function canProceed(): boolean {
@@ -274,6 +296,12 @@ export default function OnboardingPage() {
                   </div>
                 )}
               </>
+            )}
+
+            {submitError && (
+              <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-2">
+                {submitError}
+              </div>
             )}
 
             <div className="flex justify-between pt-4">

@@ -15,8 +15,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const { mode, stream, stage, checklist_status, document_key, document_details } = body;
+  const formData = await request.formData();
+  const mode = String(formData.get("mode") || "");
+  const stream = String(formData.get("stream") || "");
+  const stage = String(formData.get("stage") || "single");
+  const document_key = String(formData.get("document_key") || "");
+  const checklist_status_raw = String(formData.get("checklist_status") || "{}");
+  let checklist_status: Record<string, { has: boolean; notes?: string }> = {};
+  try {
+    checklist_status = JSON.parse(checklist_status_raw);
+  } catch {
+    checklist_status = {};
+  }
+  const files = formData.getAll("files").filter((f): f is File => f instanceof File);
   // mode: "single" | "bulk"
   // stream: the checklist stream key
   // stage: "provincial" | "federal" | "single"
@@ -27,6 +38,14 @@ export async function POST(request: Request) {
   const streamChecklist = getChecklistForStream(stream);
   if (!streamChecklist) {
     return NextResponse.json({ error: "Unknown stream" }, { status: 400 });
+  }
+
+  if (mode !== "single" && mode !== "bulk") {
+    return NextResponse.json({ error: "Invalid mode" }, { status: 400 });
+  }
+
+  if (files.length === 0) {
+    return NextResponse.json({ error: "Upload required. Please upload document files for review." }, { status: 400 });
   }
 
   // Fetch user profile for context
@@ -40,6 +59,7 @@ export async function POST(request: Request) {
     const status = checklist_status?.[item.key];
     return `- ${item.label}: ${status?.has ? "HAS IT" : "MISSING"}${status?.notes ? ` (note: ${status.notes})` : ""} ${item.required ? "[REQUIRED]" : "[OPTIONAL]"}`;
   }).join("\n");
+  const uploadedFilesSummary = files.map((file) => `- ${file.name} (${file.type || "unknown"}, ${file.size} bytes)`).join("\n");
 
   if (mode === "single") {
     const item = streamChecklist.items.find(i => i.key === document_key);
@@ -54,9 +74,8 @@ STAGE: ${stage}
 DOCUMENT: ${item.label}
 DOCUMENT REQUIREMENT: ${item.description}
 REQUIRED: ${item.required ? "Yes" : "No"}
-
-USER'S DESCRIPTION OF THEIR DOCUMENT:
-${document_details || "No details provided"}
+UPLOADED FILES FOR THIS DOCUMENT:
+${uploadedFilesSummary}
 
 USER PROFILE:
 - Status: ${profile?.immigration_status || "Unknown"}
@@ -95,6 +114,13 @@ Return ONLY valid JSON:
     }
   }
 
+  const requiredCount = streamChecklist.items.filter(i => i.required).length;
+  if (files.length < requiredCount) {
+    return NextResponse.json({
+      error: `Full package review requires all document uploads. You uploaded ${files.length}, but this stream has ${requiredCount} required documents.`,
+    }, { status: 400 });
+  }
+
   // BULK mode
   const prompt = `You are a blunt, expert Canadian immigration document reviewer doing a FULL APPLICATION PACKAGE REVIEW.
 
@@ -104,6 +130,9 @@ TOTAL REQUIRED DOCUMENTS: ${streamChecklist.items.filter(i => i.required).length
 
 CHECKLIST STATUS:
 ${checklistSummary}
+
+UPLOADED FILES:
+${uploadedFilesSummary}
 
 USER PROFILE:
 - Status: ${profile?.immigration_status || "Unknown"}
